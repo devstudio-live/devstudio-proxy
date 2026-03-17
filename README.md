@@ -34,11 +34,16 @@ make test       # run tests
 
 ## Release
 
-Tag a commit to trigger a GitHub Actions release build:
+Tag a commit to trigger a GitHub Actions release build. The workflow will automatically build all platform binaries, update the formula SHA256 values, commit them back to `main`, and publish the GitHub Release.
 
 ```sh
 git tag v0.1.0
 git push origin v0.1.0
 ```
 
-After the release is published, update the SHA256 values in [Formula/devstudio-proxy.rb](Formula/devstudio-proxy.rb) using the checksums from the release assets.
+To release a newer version, increment the tag:
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
