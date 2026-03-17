@@ -12,7 +12,13 @@ import (
 func main() {
 	port := flag.Int("port", 7700, "port to listen on")
 	enableLog := flag.Bool("log", false, "enable request logging")
+	showVersion := flag.Bool("version", false, "print version and exit")
 	flag.Parse()
+
+	if *showVersion {
+		fmt.Println(Version)
+		os.Exit(0)
+	}
 
 	var handler http.Handler = Handler{}
 	if *enableLog {

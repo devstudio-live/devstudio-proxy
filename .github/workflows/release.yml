@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+
+      - name: Build all platforms
+        working-directory: src
+        run: |
+          VERSION="${{ github.ref_name }}"
+          make all VERSION="${VERSION}"
+
+      - name: Update formula SHA256 values
+        run: |
+          DIST="src/dist"
+          FORMULA="Formula/devstudio-proxy.rb"
+          VERSION="${{ github.ref_name }}"
+
+          update_sha() {
+            local file="$1"
+            local sha
+            sha=$(sha256sum "${DIST}/${file}" | awk '{print $1}')
+            sed -i "s|REPLACE_WITH_SHA256_OF_${file}|${sha}|g" "${FORMULA}"
+          }
+
+          # Update version
+          sed -i "s|version \".*\"|version \"${VERSION#v}\"|" "${FORMULA}"
+
+          update_sha devproxy-darwin-arm64
+          update_sha devproxy-darwin-amd64
+          update_sha devproxy-linux-arm64
+          update_sha devproxy-linux-arm
+          update_sha devproxy-linux-amd64
+          update_sha devproxy-linux-386
+
+      - name: Commit updated formula
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/devstudio-proxy.rb
+          git commit -m "chore: update formula checksums for ${{ github.ref_name }}"
+          git push origin HEAD:main
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src/dist/devproxy-*
+          generate_release_notes: true

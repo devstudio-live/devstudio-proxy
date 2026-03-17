@@ -1,6 +1,7 @@
 BINARY  = devproxy
-LDFLAGS = -ldflags="-s -w"
 DIST    = dist
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+LDFLAGS = -ldflags="-s -w -X main.Version=$(VERSION)"
 
 PLATFORMS = \
 	windows/amd64 \
@@ -12,9 +13,9 @@ PLATFORMS = \
 	linux/386     \
 	linux/arm
 
-.PHONY: all clean test $(PLATFORMS)
+.PHONY: all clean test checksums $(PLATFORMS)
 
-all: $(PLATFORMS)
+all: $(PLATFORMS) checksums
 
 $(PLATFORMS):
 	$(eval OS   := $(firstword $(subst /, ,$@)))
@@ -22,6 +23,9 @@ $(PLATFORMS):
 	$(eval EXT  := $(if $(filter windows,$(OS)),.exe,))
 	mkdir -p $(DIST)
 	GOOS=$(OS) GOARCH=$(ARCH) go build $(LDFLAGS) -o $(DIST)/$(BINARY)-$(OS)-$(ARCH)$(EXT) .
+
+checksums:
+	cd $(DIST) && sha256sum $(BINARY)-* > checksums.txt
 
 test:
 	go test -v -race ./...
