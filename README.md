@@ -18,10 +18,21 @@ devproxy -port 7700 -log  # with request logging
 devproxy -version         # print version
 ```
 
-### Run as a background service
+### Run as a background service (auto-starts on login)
 
 ```sh
-brew services start devproxy
+brew services start devstudio-proxy
+```
+
+### Point your client at the proxy
+
+```sh
+# curl
+curl -x http://localhost:7700 https://example.com
+
+# environment variables (applies to most CLI tools)
+export http_proxy=http://localhost:7700
+export https_proxy=http://localhost:7700
 ```
 
 ## Build from source
