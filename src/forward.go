@@ -23,19 +23,10 @@ var hopHeaders = []string{
 }
 
 // transport is a package-level HTTP transport with sensible timeouts for
-// proxying requests to upstream servers.
+// proxying requests to upstream servers. TLS certificate verification is
+// skipped to allow self-signed and non-standard certificates common in
+// development environments.
 var transport = &http.Transport{
-	DialContext: (&net.Dialer{
-		Timeout: 10 * time.Second,
-	}).DialContext,
-	TLSHandshakeTimeout:   10 * time.Second,
-	ResponseHeaderTimeout: 30 * time.Second,
-	IdleConnTimeout:       90 * time.Second,
-}
-
-// insecureTransport skips TLS certificate verification. Used when the client
-// sends X-Insecure: true (e.g. self-signed or internal CA certs).
-var insecureTransport = &http.Transport{
 	DialContext: (&net.Dialer{
 		Timeout: 10 * time.Second,
 	}).DialContext,
@@ -85,10 +76,8 @@ func handleForward(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Strip proxy-specific headers before forwarding
-	skipVerify := r.Header.Get("X-Insecure") == "true"
 	outReq.Header.Del("X-Forwarded-Host")
 	outReq.Header.Del("X-Forwarded-Proto")
-	outReq.Header.Del("X-Insecure")
 
 	// Strip headers listed in the Connection header value (per RFC 7230 §6.1)
 	for _, connHeader := range strings.Split(r.Header.Get("Connection"), ",") {
@@ -111,11 +100,7 @@ func handleForward(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Forward the request to the upstream server
-	rt := transport
-	if skipVerify {
-		rt = insecureTransport
-	}
-	resp, err := rt.RoundTrip(outReq)
+	resp, err := transport.RoundTrip(outReq)
 	if err != nil {
 		setCORS(w, r)
 		http.Error(w, "upstream error: "+err.Error(), http.StatusBadGateway)
