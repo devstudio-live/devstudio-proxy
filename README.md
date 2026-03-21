@@ -29,6 +29,17 @@ brew update --force
 brew upgrade devstudio-proxy
 ```
 
+### Uninstall and reinstall to get the latest
+
+If you're having trouble getting the latest version, uninstall completely and reinstall:
+
+```sh
+brew uninstall devstudio-proxy
+brew untap devstudio-live/devstudio-proxy
+brew tap devstudio-live/devstudio-proxy https://github.com/devstudio-live/devstudio-proxy
+brew install devstudio-proxy
+```
+
 ### Usage
 
 ```sh
