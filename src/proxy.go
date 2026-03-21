@@ -48,6 +48,9 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case "elastic":
 			handleElasticGateway(w, r)
 			return
+		case "redis":
+			handleRedisGateway(w, r)
+			return
 		default:
 			setCORS(w, r)
 			w.Header().Set("Content-Type", "application/json")
