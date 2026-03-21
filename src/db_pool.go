@@ -21,6 +21,8 @@ type dbConnection struct {
 	SSL      string `json:"ssl"`
 	// File is used by SQLite instead of host/port.
 	File string `json:"file"`
+	// AuthSource is the authentication database for MongoDB (default: "admin").
+	AuthSource string `json:"authSource,omitempty"`
 }
 
 const (

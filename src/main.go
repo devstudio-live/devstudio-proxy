@@ -32,6 +32,7 @@ func main() {
 	}
 
 	go startPoolReaper()
+	go startMongoPoolReaper()
 
 	fmt.Fprintf(os.Stderr, "Proxy listening on :%d\n", *port)
 	log.Fatal(server.ListenAndServe())

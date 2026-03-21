@@ -42,6 +42,9 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case "sql":
 			handleDBGateway(w, r)
 			return
+		case "mongo":
+			handleMongoGateway(w, r)
+			return
 		default:
 			setCORS(w, r)
 			w.Header().Set("Content-Type", "application/json")
