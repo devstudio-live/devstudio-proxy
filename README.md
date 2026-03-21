@@ -1,6 +1,6 @@
 # devstudio-proxy
 
-A lightweight HTTP/HTTPS forward proxy with transparent TLS passthrough. See [src/README.md](src/README.md) for full documentation.
+A lightweight HTTP/HTTPS forward proxy with transparent TLS passthrough and a multi-protocol database gateway (SQL, MongoDB, Elasticsearch, Redis). See [src/README.md](src/README.md) for full documentation.
 
 ## Install via Homebrew
 
@@ -49,6 +49,27 @@ devproxy -port 7700 -log  # with request logging
 devproxy -version         # print version
 ```
 
+### DevStudio Gateway (database protocols)
+
+devproxy also acts as a local gateway for database connections from browser-based clients. Route requests using these headers:
+
+| Header | Value |
+|--------|-------|
+| `X-DevStudio-Gateway-Route` | any non-empty value |
+| `X-DevStudio-Gateway-Protocol` | `sql`, `mongo`, `elastic`, or `redis` |
+
+Each protocol exposes the same set of endpoints (via `r.URL.Path`):
+
+| Endpoint | Description |
+|----------|-------------|
+| `/test` | Ping / connectivity check |
+| `/query` | Run a query and return rows |
+| `/tables` | List tables / collections / indices / keys |
+| `/describe` | Describe schema of a table / collection |
+| `/databases` | List databases / namespaces |
+
+Connections are pooled and reaped automatically per protocol.
+
 ### Run as a background service (auto-starts on login)
 
 ```sh
@@ -86,6 +107,6 @@ git push origin v0.1.0
 To release a newer version, increment the tag:
 
 ```sh
-git tag v0.2.0
-git push origin v0.2.0
+git tag v0.8.0
+git push origin v0.8.0
 ```

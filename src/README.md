@@ -1,6 +1,6 @@
 # devproxy
 
-A super lightweight HTTP/HTTPS forward proxy written in Go. Zero external dependencies — stdlib only. Cross-compiled for Windows, macOS, and Linux across all common CPU architectures.
+A lightweight HTTP/HTTPS forward proxy with a multi-protocol database gateway, written in Go. Cross-compiled for Windows, macOS, and Linux across all common CPU architectures.
 
 ---
 
@@ -8,11 +8,14 @@ A super lightweight HTTP/HTTPS forward proxy written in Go. Zero external depend
 
 - **HTTP forwarding** — proxies plain HTTP requests to upstream servers
 - **HTTPS tunneling** — handles `CONNECT` method for transparent TLS passthrough (the proxy never sees encrypted content)
+- **Database gateway** — header-routed gateway for SQL, MongoDB, Elasticsearch, and Redis from browser-based clients
+- **Connection pooling** — per-protocol connection pools with automatic background reaping
 - **Request logging** — optional per-request log output with method, URL, status, bytes, and duration
+- **CORS support** — allows browser clients to send any method/headers
+- **Health check** — `GET /health` returns `{"ok":true,"mode":"forward-proxy"}`
 - **Hop-by-hop header stripping** — RFC 7230 §6.1 compliant; removes `Connection`, `Transfer-Encoding`, and related headers
 - **Slowloris mitigation** — `ReadHeaderTimeout: 5s` on the server
 - **Sensible upstream timeouts** — configurable via the transport (see [Architecture](#architecture))
-- **No external dependencies** — pure Go stdlib
 
 ---
 
@@ -130,6 +133,69 @@ Note: for CONNECT tunnels, `bytes` reflects only the bytes in the HTTP handshake
 
 ---
 
+## Database Gateway
+
+devproxy embeds a database gateway that allows browser-based clients (which cannot open raw TCP sockets) to connect to SQL, MongoDB, Elasticsearch, and Redis servers. Routing is done via HTTP headers rather than path prefixes to avoid collisions with upstream URLs.
+
+### Routing headers
+
+| Header | Value |
+|--------|-------|
+| `X-DevStudio-Gateway-Route` | any non-empty value (enables gateway mode) |
+| `X-DevStudio-Gateway-Protocol` | `sql`, `mongo`, `elastic`, or `redis` |
+
+### Endpoints
+
+All protocols expose the same REST-style endpoints (POST only):
+
+| Path | Description |
+|------|-------------|
+| `/test` | Ping the server; returns a row with `"PONG"` or equivalent |
+| `/query` | Execute a query string and return tabular results |
+| `/tables` | List tables / collections / indices / keys |
+| `/describe` | Describe the schema of a specific table / collection / index |
+| `/databases` | List databases / namespaces |
+
+### Request body
+
+```json
+{
+  "connection": "protocol://user:pass@host:port/dbname",
+  "query": "SELECT * FROM users",
+  "limit": 100
+}
+```
+
+- `connection` — standard DSN / URL for the target database
+- `query` — query string (SQL, MQL JSON, Lucene/DSL, Redis command)
+- `limit` — max rows/documents returned (default 100, max 1000)
+
+### Response body
+
+```json
+{
+  "columns": [{"name": "id"}, {"name": "email"}],
+  "rows": [[1, "alice@example.com"]],
+  "rowCount": 1,
+  "duration": 12.4
+}
+```
+
+### Connection pooling
+
+Each protocol maintains its own idle connection pool. Background goroutines reap stale connections so the process does not leak resources over time.
+
+### Protocol notes
+
+| Protocol | `query` format | `tables` returns | `databases` returns |
+|----------|---------------|-----------------|---------------------|
+| SQL | SQL string | table names | database names |
+| MongoDB | JSON filter `{"field":"value"}` | collection names | database names |
+| Elasticsearch | Lucene query string or `{"query":{...}}` JSON | index names | index namespaces |
+| Redis | Redis command e.g. `KEYS *`, `GET foo` | key list (SCAN) | DB index list |
+
+---
+
 ## Architecture
 
 ```
@@ -204,16 +270,24 @@ Wraps `http.ResponseWriter` to capture status code and byte count, then logs aft
 ## Project structure
 
 ```
-proxy/
-├── main.go         # Entry point: flag parsing, server setup
-├── proxy.go        # Core handler: routes CONNECT vs plain HTTP
-├── forward.go      # Plain HTTP forwarding and hop-by-hop stripping
-├── tunnel.go       # HTTPS CONNECT TCP tunnel via connection hijacking
-├── logger.go       # Optional request logging middleware
-├── proxy_test.go   # HTTP forwarding tests
-├── tunnel_test.go  # CONNECT tunnel tests
-├── go.mod          # Module: devstudio/proxy (no external deps)
-└── Makefile        # Cross-compilation and test targets
+src/
+├── main.go              # Entry point: flag parsing, server setup, pool reapers
+├── proxy.go             # Core handler: gateway routing, CONNECT vs plain HTTP
+├── forward.go           # Plain HTTP forwarding and hop-by-hop stripping
+├── tunnel.go            # HTTPS CONNECT TCP tunnel via connection hijacking
+├── logger.go            # Optional request logging middleware
+├── db_gateway.go        # SQL gateway (Postgres, MySQL, SQLite, etc.)
+├── db_pool.go           # SQL connection pool
+├── mongo_gateway.go     # MongoDB gateway
+├── mongo_pool.go        # MongoDB connection pool
+├── elastic_gateway.go   # Elasticsearch gateway
+├── elastic_pool.go      # Elasticsearch connection pool
+├── redis_gateway.go     # Redis gateway
+├── redis_pool.go        # Redis connection pool
+├── proxy_test.go        # HTTP forwarding tests
+├── tunnel_test.go       # CONNECT tunnel tests
+├── go.mod               # Module dependencies
+└── Makefile             # Cross-compilation and test targets
 ```
 
 ---
