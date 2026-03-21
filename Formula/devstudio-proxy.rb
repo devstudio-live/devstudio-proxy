@@ -1,7 +1,7 @@
 class DevstudioProxy < Formula
   desc "Lightweight HTTP/HTTPS forward proxy with transparent TLS passthrough"
   homepage "https://github.com/devstudio-live/devstudio-proxy"
-  version "0.7.0"
+  version "0.8.0"
   license "MIT"
 
   on_macos do
