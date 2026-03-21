@@ -19,6 +19,11 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.21"
+          cache-dependency-path: src/go.sum
+
+      - name: Download dependencies
+        working-directory: src
+        run: go mod download
 
       - name: Build all platforms
         working-directory: src
