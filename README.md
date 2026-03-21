@@ -9,6 +9,26 @@ brew tap devstudio-live/devstudio-proxy https://github.com/devstudio-live/devstu
 brew install devstudio-proxy
 ```
 
+### Upgrade to the latest version
+
+```sh
+brew update
+brew upgrade devstudio-proxy
+```
+
+If the upgrade does not pick up the latest tag (e.g. the formula is cached), force-reinstall:
+
+```sh
+brew reinstall devstudio-proxy
+```
+
+To force Homebrew to re-fetch the tap and pull the latest formula:
+
+```sh
+brew update --force
+brew upgrade devstudio-proxy
+```
+
 ### Usage
 
 ```sh
