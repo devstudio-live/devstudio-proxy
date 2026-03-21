@@ -33,6 +33,7 @@ func main() {
 
 	go startPoolReaper()
 	go startMongoPoolReaper()
+	go startElasticPoolReaper()
 
 	fmt.Fprintf(os.Stderr, "Proxy listening on :%d\n", *port)
 	log.Fatal(server.ListenAndServe())
