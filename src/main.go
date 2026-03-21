@@ -31,6 +31,8 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
+	go startPoolReaper()
+
 	fmt.Fprintf(os.Stderr, "Proxy listening on :%d\n", *port)
 	log.Fatal(server.ListenAndServe())
 }

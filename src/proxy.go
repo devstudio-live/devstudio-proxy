@@ -35,6 +35,22 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// DevStudio gateway — header-based routing.
+	// Headers are used (not path prefixes) to avoid collisions with upstream URLs.
+	if r.Header.Get("X-DevStudio-Gateway-Route") != "" {
+		switch r.Header.Get("X-DevStudio-Gateway-Protocol") {
+		case "sql":
+			handleDBGateway(w, r)
+			return
+		default:
+			setCORS(w, r)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "unsupported gateway protocol"})
+			return
+		}
+	}
+
 	if r.Method == http.MethodConnect {
 		handleTunnel(w, r)
 	} else {
