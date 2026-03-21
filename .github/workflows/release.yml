@@ -41,7 +41,10 @@ jobs:
             local file="$1"
             local sha
             sha=$(sha256sum "${DIST}/${file}" | awk '{print $1}')
-            sed -i "s|REPLACE_WITH_SHA256_OF_${file}|${sha}|g" "${FORMULA}"
+            # Match the line containing the binary filename, advance to the next
+            # line, and replace whatever sha256 value is there with the new one.
+            # This works on every release — no placeholder strings needed.
+            sed -i "/${file}/{n;s/sha256 \"[^\"]*\"/sha256 \"${sha}\"/}" "${FORMULA}"
           }
 
           # Update version
