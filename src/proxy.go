@@ -51,6 +51,9 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case "redis":
 			handleRedisGateway(w, r)
 			return
+		case "fs":
+			handleFSGateway(w, r)
+			return
 		default:
 			setCORS(w, r)
 			w.Header().Set("Content-Type", "application/json")
