@@ -95,6 +95,9 @@ func handleElasticTest(w http.ResponseWriter, r *http.Request, req dbRequest) {
 func handleElasticQuery(w http.ResponseWriter, r *http.Request, req dbRequest) {
 	t0 := time.Now()
 	if req.Table == "" {
+		req.Table = req.Connection.Database
+	}
+	if req.Table == "" {
 		json.NewEncoder(w).Encode(dbResponse{Error: "index is required", Duration: ms(t0)})
 		return
 	}
@@ -208,6 +211,9 @@ func handleElasticIndices(w http.ResponseWriter, r *http.Request, req dbRequest)
 // handleElasticDescribe returns the field mappings for an index as columns.
 func handleElasticDescribe(w http.ResponseWriter, r *http.Request, req dbRequest) {
 	t0 := time.Now()
+	if req.Table == "" {
+		req.Table = req.Connection.Database
+	}
 	if req.Table == "" {
 		json.NewEncoder(w).Encode(dbResponse{Error: "index is required", Duration: ms(t0)})
 		return
