@@ -8,6 +8,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-formula-update
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -31,23 +35,31 @@ jobs:
           VERSION="${{ github.ref_name }}"
           make all VERSION="${VERSION}"
 
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src/dist/devproxy-*
+            src/dist/checksums.txt
+          generate_release_notes: true
+
       - name: Update formula SHA256 values
         run: |
           DIST="src/dist"
           FORMULA="Formula/devstudio-proxy.rb"
           VERSION="${{ github.ref_name }}"
 
+          get_sha() {
+            grep "^[a-f0-9]*  $1$" "${DIST}/checksums.txt" | awk '{print $1}'
+          }
+
           update_sha() {
             local file="$1"
             local sha
-            sha=$(sha256sum "${DIST}/${file}" | awk '{print $1}')
-            # Match the line containing the binary filename, advance to the next
-            # line, and replace whatever sha256 value is there with the new one.
-            # This works on every release — no placeholder strings needed.
+            sha=$(get_sha "${file}")
             sed -i "/${file}/{n;s/sha256 \"[^\"]*\"/sha256 \"${sha}\"/}" "${FORMULA}"
           }
 
-          # Update version
           sed -i "s|version \".*\"|version \"${VERSION#v}\"|" "${FORMULA}"
 
           update_sha devproxy-darwin-arm64
@@ -63,11 +75,10 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add Formula/devstudio-proxy.rb
           git commit -m "chore: update formula checksums for ${{ github.ref_name }}"
-          git push origin HEAD:main
-
-      - name: Upload release assets
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            src/dist/devproxy-*
-          generate_release_notes: true
+          for attempt in 1 2 3; do
+            git fetch origin main
+            git rebase origin/main
+            git push origin HEAD:main && break
+            echo "Push attempt ${attempt} failed, retrying..."
+            sleep 2
+          done
