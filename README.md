@@ -82,6 +82,11 @@ devproxy exposes a local MCP endpoint at `http://localhost:7700/mcp` that proxie
 
 **Claude Code**
 
+> **Note:** The proxy must be running before adding the MCP server. If `devproxy` is not running, the MCP server will not be registered. Start it first:
+> ```sh
+> brew services start devstudio-proxy
+> ```
+
 ```sh
 claude mcp add --transport http devstudio http://localhost:7700/mcp
 ```
