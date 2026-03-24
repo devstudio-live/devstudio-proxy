@@ -76,6 +76,34 @@ Connections are pooled and reaped automatically per protocol.
 brew services start devstudio-proxy
 ```
 
+### MCP Server
+
+devproxy exposes a local MCP endpoint at `http://localhost:7700/mcp` that proxies to `https://devstudio.live/mcp`.
+
+**Claude Code**
+
+```sh
+claude mcp add --transport http devstudio http://localhost:7700/mcp
+```
+
+**OpenAI Codex / Codex CLI**
+
+```sh
+codex mcp add --name devstudio --url http://localhost:7700/mcp
+```
+
+Or add it manually to your `~/.codex/config.json`:
+
+```json
+{
+  "mcpServers": {
+    "devstudio": {
+      "url": "http://localhost:7700/mcp"
+    }
+  }
+}
+```
+
 ### Point your client at the proxy
 
 ```sh
