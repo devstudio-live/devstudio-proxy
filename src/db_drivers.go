@@ -8,7 +8,6 @@ import (
 
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
-	_ "modernc.org/sqlite"
 )
 
 // driverNameFor maps the user-facing driver name to the registered sql driver name.
@@ -19,6 +18,10 @@ func driverNameFor(driver string) (string, error) {
 	case "mysql":
 		return "mysql", nil
 	case "sqlite", "sqlite3":
+		// Check if sqlite support was compiled in
+		if !sqliteAvailable() {
+			return "", fmt.Errorf("sqlite driver not available — rebuild with -tags sqlite or use CGO_ENABLED=1")
+		}
 		return "sqlite", nil
 	default:
 		return "", fmt.Errorf("unsupported driver %q — supported: postgres, mysql, sqlite", driver)
@@ -33,6 +36,9 @@ func buildDSN(conn dbConnection) (string, error) {
 	case "mysql":
 		return buildMySQLDSN(conn), nil
 	case "sqlite", "sqlite3":
+		if !sqliteAvailable() {
+			return "", fmt.Errorf("sqlite driver not available — rebuild with -tags sqlite or use CGO_ENABLED=1")
+		}
 		return buildSQLiteDSN(conn), nil
 	default:
 		return "", fmt.Errorf("unsupported driver %q", conn.Driver)

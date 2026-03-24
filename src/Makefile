@@ -22,7 +22,7 @@ $(PLATFORMS):
 	$(eval ARCH := $(lastword $(subst /, ,$@)))
 	$(eval EXT  := $(if $(filter windows,$(OS)),.exe,))
 	mkdir -p $(DIST)
-	GOOS=$(OS) GOARCH=$(ARCH) go build $(LDFLAGS) -o $(DIST)/$(BINARY)-$(OS)-$(ARCH)$(EXT) .
+	CGO_ENABLED=0 GOOS=$(OS) GOARCH=$(ARCH) go build $(LDFLAGS) -o $(DIST)/$(BINARY)-$(OS)-$(ARCH)$(EXT) .
 
 checksums:
 	cd $(DIST) && sha256sum $(BINARY)-* > checksums.txt
