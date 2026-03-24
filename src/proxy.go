@@ -35,6 +35,17 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// MCP proxy — forward /mcp requests to the hosted devstudio MCP server.
+	// This lets Claude Code (and other MCP clients) use http://localhost:7700/mcp
+	// as a single local endpoint for all devstudio MCP tools.
+	if r.URL.Path == "/mcp" && r.URL.Host == "" {
+		r.URL.Scheme = "https"
+		r.URL.Host = "devstudio.live"
+		r.Host = "devstudio.live"
+		handleForward(w, r)
+		return
+	}
+
 	// DevStudio gateway — header-based routing.
 	// Headers are used (not path prefixes) to avoid collisions with upstream URLs.
 	if r.Header.Get("X-DevStudio-Gateway-Route") != "" {
