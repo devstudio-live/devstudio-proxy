@@ -97,16 +97,30 @@ make test       # run tests
 
 ## Release
 
-Tag a commit to trigger a GitHub Actions release build. The workflow will automatically build all platform binaries, update the formula SHA256 values, commit them back to `main`, and publish the GitHub Release.
+Use `scripts/release.sh` to safely create and push a version tag. The script validates that you're on `main`, synced with the remote, and the tag doesn't already exist.
 
 ```sh
-git tag v0.1.0
-git push origin v0.1.0
+./scripts/release.sh v0.13.0
 ```
 
-To release a newer version, increment the tag:
+The GitHub Actions workflow will then automatically:
+1. Build all platform binaries (8 targets)
+2. Generate checksums
+3. Update the Homebrew formula with new SHA256 values
+4. Commit the formula changes back to `main`
+5. Create a GitHub Release with release notes and binary assets
+
+### Cleanup old releases
+
+To free up storage, delete all releases except the latest:
 
 ```sh
-git tag v0.8.0
-git push origin v0.8.0
+./scripts/cleanup-releases.sh --dry-run  # preview
+./scripts/cleanup-releases.sh             # execute (keeps 1 latest)
+```
+
+Optionally keep more releases:
+
+```sh
+./scripts/cleanup-releases.sh --keep 3   # keep 3 most recent
 ```
