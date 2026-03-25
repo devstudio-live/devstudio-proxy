@@ -94,7 +94,7 @@ claude mcp add --transport http devstudio http://localhost:7700/mcp
 **OpenAI Codex / Codex CLI**
 
 ```sh
-codex mcp add --name devstudio --url http://localhost:7700/mcp
+codex mcp add devstudio --url http://localhost:7700/mcp
 ```
 
 Or add it manually to your `~/.codex/config.json`:
