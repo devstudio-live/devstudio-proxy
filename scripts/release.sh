@@ -7,6 +7,11 @@ VERSION="${1:-}"
 
 # Validate argument
 if [[ -z "${VERSION}" ]]; then
+  git fetch origin --tags --quiet 2>/dev/null
+  LATEST="$(git tag --sort=-v:refname | head -n1)"
+  LATEST="${LATEST:-none}"
+  echo "Latest version: ${LATEST}" >&2
+  echo "Run 'git pull origin main' to ensure you're up to date before tagging." >&2
   echo "Usage: $0 vMAJOR.MINOR.PATCH" >&2
   exit 1
 fi
