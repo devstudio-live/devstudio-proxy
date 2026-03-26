@@ -79,6 +79,39 @@ func fetchMCPScript() (string, error) {
 func loadMCPScript(src string) error {
 	vm := goja.New()
 
+	// Inject Go-backed bridge functions before running the script so they are
+	// available to any top-level initialisation code in mcp_routines.js.
+
+	// __storeContext(jsonString) — auto snapshot fallback called by _buildSnapshotUrl.
+	vm.Set("__storeContext", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			return goja.Null()
+		}
+		jsonStr := call.Arguments[0].String()
+		id, err := storeContext([]byte(jsonStr), "snapshot")
+		if err != nil {
+			return goja.Null()
+		}
+		return vm.ToValue(id)
+	})
+
+	// __storeObject(jsObject) — explicit large-object store for MCP tool routines.
+	vm.Set("__storeObject", func(call goja.FunctionCall) goja.Value {
+		if len(call.Arguments) == 0 {
+			return goja.Null()
+		}
+		obj := call.Arguments[0].Export()
+		data, err := json.Marshal(obj)
+		if err != nil {
+			return goja.Null()
+		}
+		id, err := storeContext(data, "object")
+		if err != nil {
+			return goja.Null()
+		}
+		return vm.ToValue(id)
+	})
+
 	if _, err := vm.RunString(src); err != nil {
 		return fmt.Errorf("goja eval: %w", err)
 	}

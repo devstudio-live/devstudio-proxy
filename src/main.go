@@ -40,6 +40,7 @@ func main() {
 	go startMongoPoolReaper()
 	go startElasticPoolReaper()
 	go startRedisPoolReaper()
+	go startContextReaper()
 
 	fmt.Fprintf(os.Stderr, "Proxy listening on :%d\n", *port)
 	log.Fatal(server.ListenAndServe())

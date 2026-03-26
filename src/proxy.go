@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 )
 
 // Handler is the core HTTP proxy handler. It routes CONNECT requests to
@@ -32,6 +33,22 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "mode": "forward-proxy"})
+		return
+	}
+
+	// MCP context cache — store and retrieve large payloads by UUID.
+	// POST /mcp/context → store; GET /mcp/context/{uuid} → load.
+	if strings.HasPrefix(r.URL.Path, "/mcp/context") && r.URL.Host == "" {
+		if r.Method == http.MethodPost && r.URL.Path == "/mcp/context" {
+			handleContextStore(w, r)
+		} else if r.Method == http.MethodGet && len(r.URL.Path) > len("/mcp/context/") {
+			handleContextLoad(w, r)
+		} else {
+			setCORS(w, r)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"error": "not found"}) //nolint:errcheck
+		}
 		return
 	}
 
