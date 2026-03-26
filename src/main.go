@@ -14,6 +14,7 @@ func main() {
 	enableLog := flag.Bool("log", false, "enable request logging")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	mcpRefresh := flag.Duration("mcp-refresh", 30*time.Minute, "MCP script refresh interval (0 to disable)")
+	mcpFallback := flag.Bool("mcp-fallback", false, "enable remote MCP forward fallback")
 	flag.Parse()
 
 	if *showVersion {
@@ -32,6 +33,7 @@ func main() {
 		ReadHeaderTimeout: 5 * time.Second,
 	}
 
+	mcpFallbackEnabled = *mcpFallback
 	initMCPRuntime(*mcpRefresh)
 
 	go startPoolReaper()

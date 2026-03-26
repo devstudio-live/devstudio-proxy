@@ -18,6 +18,10 @@ const (
 	mcpFetchTimeout = 15 * time.Second
 )
 
+// mcpFallbackEnabled controls whether failed local MCP execution falls back
+// to remote forwarding. Disabled by default; enable with -mcp-fallback.
+var mcpFallbackEnabled bool
+
 // mcpRuntime holds the Goja VM and associated state for local MCP execution.
 var mcpRuntime struct {
 	mu     sync.Mutex
@@ -133,7 +137,12 @@ func handleMCPGateway(w http.ResponseWriter, r *http.Request) {
 	mcpRuntime.mu.Unlock()
 
 	if !ready {
-		mcpForwardFallback(w, r)
+		if mcpFallbackEnabled {
+			mcpForwardFallback(w, r)
+			return
+		}
+		setCORS(w, r)
+		http.Error(w, "mcp runtime not ready", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -158,10 +167,14 @@ func handleMCPGateway(w http.ResponseWriter, r *http.Request) {
 	mcpRuntime.mu.Unlock()
 
 	if err != nil {
-		log.Printf("mcp: goja execution error (falling back to remote): %v", err)
-		// Reconstruct the request body for forwarding
-		r.Body = io.NopCloser(newBytesReader(bodyBytes))
-		mcpForwardFallback(w, r)
+		log.Printf("mcp: goja execution error: %v", err)
+		if mcpFallbackEnabled {
+			r.Body = io.NopCloser(newBytesReader(bodyBytes))
+			mcpForwardFallback(w, r)
+			return
+		}
+		setCORS(w, r)
+		http.Error(w, "mcp execution failed", http.StatusInternalServerError)
 		return
 	}
 
