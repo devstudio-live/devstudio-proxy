@@ -13,6 +13,7 @@ func main() {
 	port := flag.Int("port", 7700, "port to listen on")
 	enableLog := flag.Bool("log", false, "enable request logging")
 	showVersion := flag.Bool("version", false, "print version and exit")
+	mcpRefresh := flag.Duration("mcp-refresh", 30*time.Minute, "MCP script refresh interval (0 to disable)")
 	flag.Parse()
 
 	if *showVersion {
@@ -30,6 +31,8 @@ func main() {
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 	}
+
+	initMCPRuntime(*mcpRefresh)
 
 	go startPoolReaper()
 	go startMongoPoolReaper()
