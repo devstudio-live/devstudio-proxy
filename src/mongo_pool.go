@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -26,6 +27,11 @@ var (
 
 // buildMongoURI constructs a MongoDB connection URI from a dbConnection.
 func buildMongoURI(conn dbConnection) string {
+	// Use the raw connection string for mongodb+srv:// URIs — the hostname is
+	// an SRV record only and cannot be reached via a plain mongodb:// URI.
+	if strings.HasPrefix(conn.ConnectionString, "mongodb+srv://") {
+		return conn.ConnectionString
+	}
 	port := conn.Port
 	if port == 0 {
 		port = 27017

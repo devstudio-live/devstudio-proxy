@@ -23,6 +23,8 @@ type dbConnection struct {
 	File string `json:"file"`
 	// AuthSource is the authentication database for MongoDB (default: "admin").
 	AuthSource string `json:"authSource,omitempty"`
+	// ConnectionString is the raw connection string; used for mongodb+srv:// URIs.
+	ConnectionString string `json:"connectionString,omitempty"`
 }
 
 const (
