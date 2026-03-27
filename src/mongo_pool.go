@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"sync"
 	"time"
 
@@ -44,8 +45,14 @@ func buildMongoURI(conn dbConnection) string {
 		if authSource == "" {
 			authSource = "admin"
 		}
-		return fmt.Sprintf("mongodb://%s:%s@%s:%d/%s?authSource=%s",
-			conn.User, conn.Password, conn.Host, port, conn.Database, authSource)
+		u := &url.URL{
+			Scheme:   "mongodb",
+			User:     url.UserPassword(conn.User, conn.Password),
+			Host:     fmt.Sprintf("%s:%d", conn.Host, port),
+			Path:     "/" + conn.Database,
+			RawQuery: "authSource=" + url.QueryEscape(authSource),
+		}
+		return u.String()
 	}
 	return fmt.Sprintf("mongodb://%s:%d/%s", conn.Host, port, conn.Database)
 }

@@ -43,11 +43,35 @@ brew install devstudio-proxy
 ### Usage
 
 ```sh
-devproxy                  # listens on :7700
-devproxy -port 8080       # custom port
-devproxy -port 7700 -log  # with request logging
-devproxy -version         # print version
+devproxy                     # listens on :7700
+devproxy -port 8080          # custom port
+devproxy -port 7700 -log     # with request logging
+devproxy -port 7700 -verbose # log request headers (useful for debugging gateway routing)
+devproxy -version            # print version
 ```
+
+### Configuration file
+
+When installed via Homebrew, settings can be persisted in the config file so they survive service restarts. Edit the file for your platform:
+
+- **Apple Silicon:** `/opt/homebrew/etc/devstudio-proxy.conf`
+- **Intel Mac:** `/usr/local/etc/devstudio-proxy.conf`
+
+```
+PORT=7700
+LOG=false
+VERBOSE=false
+MCP_REFRESH=30m
+MCP_FALLBACK=false
+```
+
+After editing, restart the service to apply changes:
+
+```sh
+brew services restart devstudio-proxy
+```
+
+Settings can also be set via environment variables (`DEVPROXY_PORT`, `DEVPROXY_LOG`, `DEVPROXY_VERBOSE`, `DEVPROXY_MCP_REFRESH`, `DEVPROXY_MCP_FALLBACK`). Priority order: config file < env vars < CLI flags.
 
 ### DevStudio Gateway (database protocols)
 
@@ -67,6 +91,38 @@ Each protocol exposes the same set of endpoints (via `r.URL.Path`):
 | `/tables` | List tables / collections / indices / keys |
 | `/describe` | Describe schema of a table / collection |
 | `/databases` | List databases / namespaces |
+
+The request body is a JSON object with a `connection` object, a `sql` string, and an optional `table` and `limit`:
+
+```json
+{
+  "connection": {
+    "driver": "postgres",
+    "host": "localhost",
+    "port": 5432,
+    "database": "mydb",
+    "user": "alice",
+    "password": "secret",
+    "ssl": "disable"
+  },
+  "sql": "SELECT * FROM users LIMIT 10"
+}
+```
+
+MongoDB Atlas example using a full SRV URI:
+
+```json
+{
+  "connection": {
+    "connectionString": "mongodb+srv://user:p%40ssword@cluster0.abc123.mongodb.net/?retryWrites=true&w=majority",
+    "database": "mydb"
+  },
+  "table": "orders",
+  "sql": "{}"
+}
+```
+
+See [src/README.md](src/README.md) for connection field reference and examples for all protocols (MySQL, SQLite, MongoDB, Elasticsearch, Redis).
 
 Connections are pooled and reaped automatically per protocol.
 

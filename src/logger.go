@@ -39,17 +39,27 @@ func (lrw *loggingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) 
 
 // loggingMiddleware wraps an http.Handler to log each request.
 type loggingMiddleware struct {
-	next http.Handler
+	next    http.Handler
+	verbose bool
 }
 
 // NewLoggingMiddleware returns an http.Handler that logs each request after
 // it completes, including method, URL, status, bytes, and elapsed time.
-func NewLoggingMiddleware(next http.Handler) http.Handler {
-	return &loggingMiddleware{next: next}
+// When verbose is true, request headers are also logged.
+func NewLoggingMiddleware(next http.Handler, verbose bool) http.Handler {
+	return &loggingMiddleware{next: next, verbose: verbose}
 }
 
 // ServeHTTP logs request details after the underlying handler completes.
 func (m *loggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	if m.verbose {
+		log.Printf(">> %s %s", r.Method, r.URL)
+		for name, values := range r.Header {
+			for _, v := range values {
+				log.Printf("   %s: %s", name, v)
+			}
+		}
+	}
 	start := time.Now()
 	lrw := &loggingResponseWriter{ResponseWriter: w, status: 200}
 	m.next.ServeHTTP(lrw, r)

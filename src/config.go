@@ -14,6 +14,7 @@ import (
 type AppConfig struct {
 	Port        int
 	Log         bool
+	Verbose     bool
 	MCPRefresh  time.Duration
 	MCPFallback bool
 }
@@ -22,6 +23,7 @@ func defaultConfig() AppConfig {
 	return AppConfig{
 		Port:        7700,
 		Log:         false,
+		Verbose:     false,
 		MCPRefresh:  30 * time.Minute,
 		MCPFallback: false,
 	}
@@ -131,6 +133,7 @@ func applyEnvVars(cfg *AppConfig) {
 	for key, val := range map[string]string{
 		"PORT":         os.Getenv("DEVPROXY_PORT"),
 		"LOG":          os.Getenv("DEVPROXY_LOG"),
+		"VERBOSE":      os.Getenv("DEVPROXY_VERBOSE"),
 		"MCP_REFRESH":  os.Getenv("DEVPROXY_MCP_REFRESH"),
 		"MCP_FALLBACK": os.Getenv("DEVPROXY_MCP_FALLBACK"),
 	} {
@@ -152,6 +155,8 @@ func applyKeyValue(cfg *AppConfig, key, val string) error {
 		cfg.Port = n
 	case "LOG":
 		cfg.Log = strings.ToLower(val) == "true" || val == "1"
+	case "VERBOSE":
+		cfg.Verbose = strings.ToLower(val) == "true" || val == "1"
 	case "MCP_REFRESH":
 		d, err := time.ParseDuration(val)
 		if err != nil {

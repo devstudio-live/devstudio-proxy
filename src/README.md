@@ -76,6 +76,7 @@ make test
 |------|------|---------|-------------|
 | `-port` | int | `7700` | Port to listen on |
 | `-log` | bool | `false` | Enable per-request logging to stderr |
+| `-verbose` | bool | `false` | Log request headers on every request (implies `-log`) |
 
 ### Startup output
 
@@ -131,6 +132,16 @@ Format: `<remote addr> <method> <url> -> <status> (<bytes> bytes) in <duration>`
 
 Note: for CONNECT tunnels, `bytes` reflects only the bytes in the HTTP handshake phase (not the tunneled TLS payload, which is opaque to the proxy).
 
+When `-verbose` is enabled, request headers are also logged before each line (useful for debugging gateway routing):
+
+```
+2026/03/12 06:53:33 >> POST /query
+   X-Devstudio-Gateway-Route: 1
+   X-Devstudio-Gateway-Protocol: mongo
+   Content-Type: application/json
+2026/03/12 06:53:33 127.0.0.1:52104 POST /query -> 200 (312 bytes) in 14.2ms
+```
+
 ---
 
 ## Database Gateway
@@ -160,25 +171,262 @@ All protocols expose the same REST-style endpoints (POST only):
 
 ```json
 {
-  "connection": "protocol://user:pass@host:port/dbname",
-  "query": "SELECT * FROM users",
+  "connection": { ... },
+  "sql": "SELECT * FROM users",
+  "table": "users",
   "limit": 100
 }
 ```
 
-- `connection` — standard DSN / URL for the target database
-- `query` — query string (SQL, MQL JSON, Lucene/DSL, Redis command)
-- `limit` — max rows/documents returned (default 100, max 1000)
+- `connection` — JSON object describing the target database (see [Connection fields](#connection-fields) below)
+- `sql` — query string (SQL, MQL JSON filter, Lucene/DSL, Redis command)
+- `table` — collection / index / key prefix (required for `/describe` and MongoDB `/query`)
+- `limit` — max rows/documents returned (default 1000, max 10000)
 
 ### Response body
 
 ```json
 {
-  "columns": [{"name": "id"}, {"name": "email"}],
+  "columns": [{"name": "id", "type": "int4", "nullable": false}, {"name": "email", "type": "text", "nullable": true}],
   "rows": [[1, "alice@example.com"]],
   "rowCount": 1,
-  "duration": 12.4
+  "durationMs": 12.4
 }
+```
+
+### Connection fields
+
+| Field | Type | Protocols | Description |
+|-------|------|-----------|-------------|
+| `driver` | string | SQL | `"postgres"`, `"mysql"`, or `"sqlite"` |
+| `host` | string | SQL, MongoDB, Elasticsearch, Redis | Hostname or IP |
+| `port` | int | SQL, MongoDB, Elasticsearch, Redis | Port (defaults: Postgres 5432, MySQL 3306, Mongo 27017, ES 9200, Redis 6379) |
+| `database` | string | SQL, MongoDB | Database name (Redis: DB index 0–15, default 0) |
+| `user` | string | SQL, MongoDB, Elasticsearch, Redis | Username |
+| `password` | string | SQL, MongoDB, Elasticsearch, Redis | Password |
+| `ssl` | string | SQL, Elasticsearch, Redis | TLS mode: `"disable"` (default for SQL), `"require"`, `"verify-full"` (Postgres only) |
+| `file` | string | SQLite | Path to `.db` file or `":memory:"` |
+| `authSource` | string | MongoDB | Auth database (default: `"admin"`) |
+| `connectionString` | string | MongoDB | Full `mongodb+srv://` or `mongodb://` URI; overrides all other fields |
+
+### Connection examples
+
+#### PostgreSQL
+
+```bash
+# Local, no TLS
+curl -s -X POST http://localhost:7700/query \
+  -H "X-DevStudio-Gateway-Route: 1" \
+  -H "X-DevStudio-Gateway-Protocol: sql" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connection": {
+      "driver": "postgres",
+      "host": "localhost",
+      "port": 5432,
+      "database": "mydb",
+      "user": "postgres",
+      "password": "secret",
+      "ssl": "disable"
+    },
+    "sql": "SELECT id, email FROM users LIMIT 5"
+  }'
+
+# Remote with TLS (e.g. AWS RDS, Supabase)
+curl -s -X POST http://localhost:7700/query \
+  -H "X-DevStudio-Gateway-Route: 1" \
+  -H "X-DevStudio-Gateway-Protocol: sql" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connection": {
+      "driver": "postgres",
+      "host": "db.example.com",
+      "port": 5432,
+      "database": "prod",
+      "user": "app",
+      "password": "secret",
+      "ssl": "require"
+    },
+    "sql": "SELECT count(*) FROM orders"
+  }'
+```
+
+#### MySQL
+
+```bash
+curl -s -X POST http://localhost:7700/query \
+  -H "X-DevStudio-Gateway-Route: 1" \
+  -H "X-DevStudio-Gateway-Protocol: sql" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connection": {
+      "driver": "mysql",
+      "host": "localhost",
+      "port": 3306,
+      "database": "mydb",
+      "user": "root",
+      "password": "secret"
+    },
+    "sql": "SELECT id, name FROM products LIMIT 10"
+  }'
+```
+
+#### SQLite
+
+```bash
+# File-based
+curl -s -X POST http://localhost:7700/query \
+  -H "X-DevStudio-Gateway-Route: 1" \
+  -H "X-DevStudio-Gateway-Protocol: sql" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connection": {
+      "driver": "sqlite",
+      "file": "/path/to/database.db"
+    },
+    "sql": "SELECT * FROM logs LIMIT 20"
+  }'
+
+# In-memory (useful for testing)
+curl -s -X POST http://localhost:7700/test \
+  -H "X-DevStudio-Gateway-Route: 1" \
+  -H "X-DevStudio-Gateway-Protocol: sql" \
+  -H "Content-Type: application/json" \
+  -d '{"connection": {"driver": "sqlite", "file": ":memory:"}}'
+```
+
+#### MongoDB — local
+
+```bash
+# Without auth
+curl -s -X POST http://localhost:7700/tables \
+  -H "X-DevStudio-Gateway-Route: 1" \
+  -H "X-DevStudio-Gateway-Protocol: mongo" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connection": {
+      "host": "localhost",
+      "port": 27017,
+      "database": "mydb"
+    }
+  }'
+
+# With auth
+curl -s -X POST http://localhost:7700/query \
+  -H "X-DevStudio-Gateway-Route: 1" \
+  -H "X-DevStudio-Gateway-Protocol: mongo" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connection": {
+      "host": "localhost",
+      "port": 27017,
+      "database": "mydb",
+      "user": "admin",
+      "password": "secret",
+      "authSource": "admin"
+    },
+    "table": "users",
+    "sql": "{\"status\": \"active\"}"
+  }'
+```
+
+#### MongoDB Atlas (SRV URI)
+
+```bash
+# Use connectionString for mongodb+srv:// — it is passed through as-is.
+# Credentials in the URI must be percent-encoded if they contain special characters.
+curl -s -X POST http://localhost:7700/query \
+  -H "X-DevStudio-Gateway-Route: 1" \
+  -H "X-DevStudio-Gateway-Protocol: mongo" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connection": {
+      "connectionString": "mongodb+srv://user:p%40ssword@cluster0.abc123.mongodb.net/?retryWrites=true&w=majority",
+      "database": "mydb"
+    },
+    "table": "orders",
+    "sql": "{}"
+  }'
+```
+
+#### Elasticsearch
+
+```bash
+# Local, no auth
+curl -s -X POST http://localhost:7700/tables \
+  -H "X-DevStudio-Gateway-Route: 1" \
+  -H "X-DevStudio-Gateway-Protocol: elastic" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connection": {
+      "host": "localhost",
+      "port": 9200
+    }
+  }'
+
+# With HTTP Basic auth and TLS (e.g. Elastic Cloud)
+curl -s -X POST http://localhost:7700/query \
+  -H "X-DevStudio-Gateway-Route: 1" \
+  -H "X-DevStudio-Gateway-Protocol: elastic" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connection": {
+      "host": "my-cluster.es.io",
+      "port": 9243,
+      "user": "elastic",
+      "password": "secret",
+      "ssl": "require"
+    },
+    "table": "logs-*",
+    "sql": "{\"query\": {\"match\": {\"level\": \"error\"}}}"
+  }'
+```
+
+#### Redis
+
+```bash
+# Local, no auth
+curl -s -X POST http://localhost:7700/tables \
+  -H "X-DevStudio-Gateway-Route: 1" \
+  -H "X-DevStudio-Gateway-Protocol: redis" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connection": {
+      "host": "localhost",
+      "port": 6379
+    }
+  }'
+
+# With password, specific DB index
+curl -s -X POST http://localhost:7700/query \
+  -H "X-DevStudio-Gateway-Route: 1" \
+  -H "X-DevStudio-Gateway-Protocol: redis" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connection": {
+      "host": "localhost",
+      "port": 6379,
+      "password": "secret",
+      "database": "1"
+    },
+    "sql": "KEYS user:*"
+  }'
+
+# Redis 6+ ACL user with TLS (e.g. AWS ElastiCache, Redis Cloud)
+curl -s -X POST http://localhost:7700/query \
+  -H "X-DevStudio-Gateway-Route: 1" \
+  -H "X-DevStudio-Gateway-Protocol: redis" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connection": {
+      "host": "redis.example.com",
+      "port": 6380,
+      "user": "myuser",
+      "password": "secret",
+      "ssl": "require"
+    },
+    "sql": "GET session:abc123"
+  }'
 ```
 
 ### Connection pooling
@@ -187,12 +435,12 @@ Each protocol maintains its own idle connection pool. Background goroutines reap
 
 ### Protocol notes
 
-| Protocol | `query` format | `tables` returns | `databases` returns |
-|----------|---------------|-----------------|---------------------|
-| SQL | SQL string | table names | database names |
-| MongoDB | JSON filter `{"field":"value"}` | collection names | database names |
-| Elasticsearch | Lucene query string or `{"query":{...}}` JSON | index names | index namespaces |
-| Redis | Redis command e.g. `KEYS *`, `GET foo` | key list (SCAN) | DB index list |
+| Protocol | `sql` field format | `table` field | `tables` returns | `databases` returns |
+|----------|--------------------|---------------|-----------------|---------------------|
+| SQL | SQL string | ignored | table + view names | database names |
+| MongoDB | JSON filter `{"field":"value"}` or `{}` for all | collection name (required) | collection names | database names |
+| Elasticsearch | Lucene string or `{"query":{...}}` JSON body | index pattern | index names | index namespaces |
+| Redis | Redis command, e.g. `KEYS *`, `GET foo`, `HGETALL bar` | key prefix for SCAN | key list | DB index list |
 
 ---
 

@@ -19,6 +19,7 @@ func main() {
 
 	port := flag.Int("port", cfg.Port, "port to listen on")
 	enableLog := flag.Bool("log", cfg.Log, "enable request logging")
+	verbose := flag.Bool("verbose", cfg.Verbose, "log request headers (implies -log)")
 	showVersion := flag.Bool("version", false, "print version and exit")
 	mcpRefresh := flag.Duration("mcp-refresh", cfg.MCPRefresh, "MCP script refresh interval (0 to disable)")
 	mcpFallback := flag.Bool("mcp-fallback", cfg.MCPFallback, "enable remote MCP forward fallback")
@@ -30,8 +31,8 @@ func main() {
 	}
 
 	var handler http.Handler = Handler{}
-	if *enableLog {
-		handler = NewLoggingMiddleware(handler)
+	if *enableLog || *verbose {
+		handler = NewLoggingMiddleware(handler, *verbose)
 	}
 
 	server := &http.Server{

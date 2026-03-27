@@ -63,6 +63,10 @@ class DevstudioProxy < Formula
         # Enable per-request logging to stderr (default: false)
         LOG=false
 
+        # Also log all request headers — useful for debugging gateway routing (default: false)
+        # Implies LOG=true when enabled.
+        VERBOSE=false
+
         # MCP script refresh interval, e.g. 30m, 1h, 0 to disable (default: 30m)
         MCP_REFRESH=30m
 
