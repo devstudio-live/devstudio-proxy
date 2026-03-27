@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+// adminPort and adminServer are package-level so admin.go can read the port
+// and trigger a restart via server.Close().
+var adminPort int
+var adminServer *http.Server
+
 func main() {
 	// Load layered config: defaults → system config file → user config file → env vars.
 	// The resolved values become flag defaults, so CLI flags still override everything.
@@ -30,17 +35,14 @@ func main() {
 		os.Exit(0)
 	}
 
-	var handler http.Handler = Handler{}
-	if *enableLog || *verbose {
-		handler = NewLoggingMiddleware(handler, *verbose)
-	}
+	// Wire atomic bools from CLI flags so admin endpoints can toggle them at runtime.
+	logEnabled.Store(*enableLog || *verbose)
+	verboseEnabled.Store(*verbose)
 
-	server := &http.Server{
-		Addr:              fmt.Sprintf(":%d", *port),
-		Handler:           handler,
-		ReadHeaderTimeout: 5 * time.Second,
-	}
+	// Wire log output through the ring buffer so /admin/logs can stream it.
+	initLogOutput()
 
+	adminPort = *port
 	mcpFallbackEnabled = *mcpFallback
 	initMCPRuntime(*mcpRefresh)
 
@@ -50,6 +52,20 @@ func main() {
 	go startRedisPoolReaper()
 	go startContextReaper()
 
+	handler := NewLoggingMiddleware(Handler{})
+
 	fmt.Fprintf(os.Stderr, "Proxy listening on :%d\n", *port)
-	log.Fatal(server.ListenAndServe())
+
+	// Restart loop: /admin/restart closes adminServer; we re-listen until a hard error.
+	for {
+		adminServer = &http.Server{
+			Addr:              fmt.Sprintf(":%d", adminPort),
+			Handler:           handler,
+			ReadHeaderTimeout: 5 * time.Second,
+		}
+		if err := adminServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("server error: %v", err)
+		}
+		fmt.Fprintf(os.Stderr, "Proxy restarted on :%d\n", adminPort)
+	}
 }

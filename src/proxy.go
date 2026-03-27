@@ -36,6 +36,12 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Admin endpoints — runtime config, log streaming, and restart.
+	if isAdminPath(r.URL.Path) && r.URL.Host == "" {
+		handleAdmin(w, r)
+		return
+	}
+
 	// MCP context cache — store and retrieve large payloads by UUID.
 	// POST /mcp/context → store; GET /mcp/context/{uuid} → load.
 	if strings.HasPrefix(r.URL.Path, "/mcp/context") && r.URL.Host == "" {
