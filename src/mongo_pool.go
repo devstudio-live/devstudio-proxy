@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"strings"
 	"sync"
 	"time"
 
@@ -27,9 +26,13 @@ var (
 
 // buildMongoURI constructs a MongoDB connection URI from a dbConnection.
 func buildMongoURI(conn dbConnection) string {
-	// Use the raw connection string for mongodb+srv:// URIs — the hostname is
-	// an SRV record only and cannot be reached via a plain mongodb:// URI.
-	if strings.HasPrefix(conn.ConnectionString, "mongodb+srv://") {
+	// Use the raw connection string when provided so that all options
+	// (e.g. directConnection=true, authMechanism) are preserved as-is.
+	// This is required for mongodb+srv:// URIs (SRV-only hostnames) and for
+	// plain mongodb:// URIs that include options like directConnection=true,
+	// which prevent the driver from doing replica-set discovery and trying to
+	// resolve internal hostnames that are unreachable from outside the cluster.
+	if conn.ConnectionString != "" {
 		return conn.ConnectionString
 	}
 	port := conn.Port
