@@ -40,8 +40,43 @@ class DevstudioProxy < Formula
     bin.install Dir["devproxy-*"].first => "devproxy"
   end
 
+  def post_install
+    # Write a default config file only if one does not already exist.
+    # The `etc` helper resolves to <brew_prefix>/etc/, so this works on both
+    # Apple Silicon (/opt/homebrew/etc/) and Intel (/usr/local/etc/) without
+    # any conditional logic. The `unless` guard prevents clobbering user edits
+    # during upgrades — same pattern used by the Homebrew nginx formula.
+    conf_file = etc/"devstudio-proxy.conf"
+    unless conf_file.exist?
+      conf_file.write <<~EOS
+        # devstudio-proxy configuration
+        # CLI flags override these settings. See: devproxy -help
+        #
+        # Priority: compiled defaults < this file < user config file
+        #   (~/.config/devstudio-proxy/config.conf or
+        #    ~/Library/Application Support/devstudio-proxy/config.conf)
+        # < DEVPROXY_* env vars < CLI flags
+
+        # Port to listen on (default: 7700)
+        PORT=7700
+
+        # Enable per-request logging to stderr (default: false)
+        LOG=false
+
+        # MCP script refresh interval, e.g. 30m, 1h, 0 to disable (default: 30m)
+        MCP_REFRESH=30m
+
+        # Enable remote MCP forward fallback (default: false)
+        MCP_FALLBACK=false
+      EOS
+    end
+  end
+
   service do
-    run [opt_bin/"devproxy", "-port", "7700"]
+    # Port and other settings are read from /opt/homebrew/etc/devstudio-proxy.conf
+    # (written by post_install). Edit that file to change the port without
+    # modifying the formula or using `brew services edit`.
+    run [opt_bin/"devproxy"]
     keep_alive true
     log_path var/"log/devproxy.log"
     error_log_path var/"log/devproxy.log"

@@ -10,11 +10,18 @@ import (
 )
 
 func main() {
-	port := flag.Int("port", 7700, "port to listen on")
-	enableLog := flag.Bool("log", false, "enable request logging")
+	// Load layered config: defaults → system config file → user config file → env vars.
+	// The resolved values become flag defaults, so CLI flags still override everything.
+	cfg, err := loadConfig()
+	if err != nil {
+		log.Fatalf("config error: %v", err)
+	}
+
+	port := flag.Int("port", cfg.Port, "port to listen on")
+	enableLog := flag.Bool("log", cfg.Log, "enable request logging")
 	showVersion := flag.Bool("version", false, "print version and exit")
-	mcpRefresh := flag.Duration("mcp-refresh", 30*time.Minute, "MCP script refresh interval (0 to disable)")
-	mcpFallback := flag.Bool("mcp-fallback", false, "enable remote MCP forward fallback")
+	mcpRefresh := flag.Duration("mcp-refresh", cfg.MCPRefresh, "MCP script refresh interval (0 to disable)")
+	mcpFallback := flag.Bool("mcp-fallback", cfg.MCPFallback, "enable remote MCP forward fallback")
 	flag.Parse()
 
 	if *showVersion {
