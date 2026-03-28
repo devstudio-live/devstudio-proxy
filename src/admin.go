@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 )
@@ -66,6 +67,7 @@ func adminPostConfig(w http.ResponseWriter, r *http.Request) {
 func adminRestart(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true}) //nolint:errcheck
+	log.Printf("proxy: shutdown requested on :%d", adminPort)
 	if adminServer != nil {
 		go func() {
 			_ = adminServer.Close()

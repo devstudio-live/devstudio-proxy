@@ -54,10 +54,9 @@ func main() {
 
 	handler := NewLoggingMiddleware(Handler{})
 
-	fmt.Fprintf(os.Stderr, "Proxy listening on :%d\n", *port)
-
 	// Restart loop: /admin/restart closes adminServer; we re-listen until a hard error.
 	for {
+		log.Printf("proxy: listening on :%d (log=%t verbose=%t)", adminPort, logEnabled.Load(), verboseEnabled.Load())
 		adminServer = &http.Server{
 			Addr:              fmt.Sprintf(":%d", adminPort),
 			Handler:           handler,
@@ -66,6 +65,5 @@ func main() {
 		if err := adminServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server error: %v", err)
 		}
-		fmt.Fprintf(os.Stderr, "Proxy restarted on :%d\n", adminPort)
 	}
 }
