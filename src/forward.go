@@ -40,9 +40,13 @@ var transport = &http.Transport{
 // allowing browser-based clients (rest-client) to read the response.
 func setCORS(w http.ResponseWriter, r *http.Request) {
 	if origin := r.Header.Get("Origin"); origin != "" {
+		w.Header().Add("Vary", "Origin")
 		w.Header().Set("Access-Control-Allow-Origin", origin)
 		w.Header().Set("Access-Control-Allow-Credentials", "true")
 		w.Header().Set("Access-Control-Expose-Headers", "*")
+		// Chrome's Private Network Access checks require this for public HTTPS
+		// pages reaching loopback services such as localhost.
+		w.Header().Set("Access-Control-Allow-Private-Network", "true")
 	}
 }
 

@@ -177,3 +177,42 @@ func TestHTTPForward_InvalidTarget(t *testing.T) {
 		t.Fatalf("expected 502, got %d", resp.StatusCode)
 	}
 }
+
+func TestOptionsPreflight_AllowsPrivateNetwork(t *testing.T) {
+	req := httptest.NewRequest(http.MethodOptions, "/admin/logs", nil)
+	req.Header.Set("Origin", "https://www.devstudio.live")
+	req.Header.Set("Access-Control-Request-Method", "GET")
+	req.Header.Set("Access-Control-Request-Headers", "content-type")
+	req.Header.Set("Access-Control-Request-Private-Network", "true")
+
+	rr := httptest.NewRecorder()
+	Handler{}.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusNoContent {
+		t.Fatalf("expected 204, got %d", rr.Code)
+	}
+	if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "https://www.devstudio.live" {
+		t.Fatalf("allow-origin = %q", got)
+	}
+	if got := rr.Header().Get("Access-Control-Allow-Private-Network"); got != "true" {
+		t.Fatalf("allow-private-network = %q, want true", got)
+	}
+}
+
+func TestHealth_IncludesPrivateNetworkHeader(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	req.Header.Set("Origin", "https://www.devstudio.live")
+
+	rr := httptest.NewRecorder()
+	Handler{}.ServeHTTP(rr, req)
+
+	if rr.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rr.Code)
+	}
+	if got := rr.Header().Get("Access-Control-Allow-Origin"); got != "https://www.devstudio.live" {
+		t.Fatalf("allow-origin = %q", got)
+	}
+	if got := rr.Header().Get("Access-Control-Allow-Private-Network"); got != "true" {
+		t.Fatalf("allow-private-network = %q, want true", got)
+	}
+}

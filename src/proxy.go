@@ -17,9 +17,15 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// CORS preflight — allow browser-based clients to send any method/headers
 	if r.Method == http.MethodOptions {
 		if origin != "" {
+			w.Header().Add("Vary", "Origin")
+			w.Header().Add("Vary", "Access-Control-Request-Method")
+			w.Header().Add("Vary", "Access-Control-Request-Headers")
+			w.Header().Add("Vary", "Access-Control-Request-Private-Network")
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "*")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Access-Control-Allow-Private-Network", "true")
 			w.Header().Set("Access-Control-Max-Age", "86400")
 		}
 		w.WriteHeader(http.StatusNoContent)
@@ -28,9 +34,7 @@ func (h Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Health check (non-proxy relative-path request)
 	if r.URL.Path == "/health" && r.URL.Host == "" {
-		if origin != "" {
-			w.Header().Set("Access-Control-Allow-Origin", origin)
-		}
+		setCORS(w, r)
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{"ok": true, "mode": "forward-proxy"})
 		return
