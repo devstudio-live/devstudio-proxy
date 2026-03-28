@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 )
 
@@ -76,6 +77,11 @@ func adminRestart(w http.ResponseWriter, r *http.Request) {
 }
 
 func adminLogs(w http.ResponseWriter, r *http.Request) {
+	if wantsJSONLogs(r) {
+		adminLogsJSON(w, r)
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
@@ -91,8 +97,8 @@ func adminLogs(w http.ResponseWriter, r *http.Request) {
 	buffered := logBuf.snapshot()
 	logBuf.mu.Unlock()
 
-	for _, line := range buffered {
-		b, _ := json.Marshal(line)
+	for _, entry := range buffered {
+		b, _ := json.Marshal(entry.Line)
 		_, _ = w.Write([]byte("data: " + string(b) + "\n\n"))
 	}
 	flusher.Flush()
@@ -116,6 +122,26 @@ func adminLogs(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+func wantsJSONLogs(r *http.Request) bool {
+	if r.URL.Query().Get("format") == "json" {
+		return true
+	}
+	return strings.Contains(r.Header.Get("Accept"), "application/json")
+}
+
+func adminLogsJSON(w http.ResponseWriter, r *http.Request) {
+	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+
+	logBuf.mu.Lock()
+	lines := logBuf.snapshotSince(since)
+	logBuf.mu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"lines": lines,
+	}) //nolint:errcheck
 }
 
 // adminCORSPreflight handles OPTIONS for /admin/* in the main router.

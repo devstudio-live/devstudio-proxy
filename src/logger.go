@@ -19,37 +19,48 @@ var verboseEnabled atomic.Bool
 
 const logBufCap = 200
 
+type logEntry struct {
+	ID   int64  `json:"id"`
+	Line string `json:"line"`
+}
+
 type logRing struct {
 	mu          sync.Mutex
-	lines       []string
+	lines       []logEntry
 	pos         int
+	nextID      int64
 	subscribers map[chan string]struct{}
 }
 
 var logBuf = &logRing{
-	lines:       make([]string, 0, logBufCap),
+	lines:       make([]logEntry, 0, logBufCap),
 	subscribers: make(map[chan string]struct{}),
 }
 
 func (r *logRing) push(line string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	entry := logEntry{
+		ID:   r.nextID + 1,
+		Line: line,
+	}
+	r.nextID = entry.ID
 	if len(r.lines) < logBufCap {
-		r.lines = append(r.lines, line)
+		r.lines = append(r.lines, entry)
 	} else {
-		r.lines[r.pos] = line
+		r.lines[r.pos] = entry
 		r.pos = (r.pos + 1) % logBufCap
 	}
 	for ch := range r.subscribers {
 		select {
-		case ch <- line:
+		case ch <- entry.Line:
 		default:
 		}
 	}
 }
 
-func (r *logRing) snapshot() []string {
-	out := make([]string, len(r.lines))
+func (r *logRing) snapshot() []logEntry {
+	out := make([]logEntry, len(r.lines))
 	if len(r.lines) < logBufCap {
 		copy(out, r.lines)
 		return out
@@ -57,6 +68,20 @@ func (r *logRing) snapshot() []string {
 	// Wrap-around: pos is the oldest entry
 	copy(out, r.lines[r.pos:])
 	copy(out[logBufCap-r.pos:], r.lines[:r.pos])
+	return out
+}
+
+func (r *logRing) snapshotSince(since int64) []logEntry {
+	all := r.snapshot()
+	if since <= 0 {
+		return all
+	}
+	out := make([]logEntry, 0, len(all))
+	for _, entry := range all {
+		if entry.ID > since {
+			out = append(out, entry)
+		}
+	}
 	return out
 }
 

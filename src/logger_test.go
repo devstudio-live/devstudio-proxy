@@ -10,7 +10,7 @@ import (
 
 func TestInitLogOutput_PushesLogLinesToRingBuffer(t *testing.T) {
 	logBuf = &logRing{
-		lines:       make([]string, 0, logBufCap),
+		lines:       make([]logEntry, 0, logBufCap),
 		subscribers: make(map[chan string]struct{}),
 	}
 
@@ -28,7 +28,12 @@ func TestInitLogOutput_PushesLogLinesToRingBuffer(t *testing.T) {
 	initLogOutput()
 	log.Print("proxy: startup test")
 
-	got := strings.Join(logBuf.snapshot(), "")
+	entries := logBuf.snapshot()
+	lines := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		lines = append(lines, entry.Line)
+	}
+	got := strings.Join(lines, "")
 	if !strings.Contains(got, "proxy: startup test") {
 		t.Fatalf("expected ring buffer to contain startup log, got %q", got)
 	}
