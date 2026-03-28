@@ -2,6 +2,8 @@ package main
 
 import (
 	"log"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -29,5 +31,14 @@ func TestInitLogOutput_PushesLogLinesToRingBuffer(t *testing.T) {
 	got := strings.Join(logBuf.snapshot(), "")
 	if !strings.Contains(got, "proxy: startup test") {
 		t.Fatalf("expected ring buffer to contain startup log, got %q", got)
+	}
+}
+
+func TestLoggingResponseWriter_ImplementsFlusher(t *testing.T) {
+	rec := httptest.NewRecorder()
+	lrw := &loggingResponseWriter{ResponseWriter: rec, status: 200}
+
+	if _, ok := interface{}(lrw).(http.Flusher); !ok {
+		t.Fatal("expected loggingResponseWriter to implement http.Flusher")
 	}
 }

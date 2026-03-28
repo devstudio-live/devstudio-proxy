@@ -114,6 +114,12 @@ func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
 	return n, err
 }
 
+// Flush delegates to the underlying ResponseWriter's Flush method so
+// streaming endpoints like /admin/logs keep working through middleware.
+func (lrw *loggingResponseWriter) Flush() {
+	lrw.ResponseWriter.(http.Flusher).Flush()
+}
+
 // Hijack delegates to the underlying ResponseWriter's Hijack method.
 // This is CRITICAL: without this, CONNECT tunneling through the logging
 // middleware would fail because the loggingResponseWriter would not satisfy
