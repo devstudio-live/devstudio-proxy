@@ -1,17 +1,17 @@
 class DevstudioProxy < Formula
   desc "Lightweight HTTP/HTTPS forward proxy with transparent TLS passthrough"
   homepage "https://github.com/devstudio-live/devstudio-proxy"
-  version "0.24.0"
+  version "0.25.0"
   license "MIT"
 
   on_macos do
     on_arm do
       url "https://github.com/devstudio-live/devstudio-proxy/releases/download/v#{version}/devproxy-darwin-arm64"
-      sha256 "da3753a53ec270f15062d69eb20207ae2c3c26309783f830ef06fdc47a75352f"
+      sha256 "97dccad014438b305abeb9f418e020d452fc82d6138d211a69c1be1f7053079b"
     end
     on_intel do
       url "https://github.com/devstudio-live/devstudio-proxy/releases/download/v#{version}/devproxy-darwin-amd64"
-      sha256 "a38dc5be28464acfabbe5399a21626359b9db842f43738a52e896a72d0c174a3"
+      sha256 "8d1e5b4b908a5284433fe24dcf832a65c683d63b864a3e79950acce0430f8463"
     end
   end
 
@@ -19,19 +19,19 @@ class DevstudioProxy < Formula
     on_arm do
       if Hardware::CPU.is_64_bit?
         url "https://github.com/devstudio-live/devstudio-proxy/releases/download/v#{version}/devproxy-linux-arm64"
-        sha256 "42a10d18f12314d90485a33c71b389819096502883ae69bab6d9cc50236f35a8"
+        sha256 "bca8cc619a6c590fb1241846ed4847ea04d7d6d7c62de0f5fb198cace03f57aa"
       else
         url "https://github.com/devstudio-live/devstudio-proxy/releases/download/v#{version}/devproxy-linux-arm"
-        sha256 "42a10d18f12314d90485a33c71b389819096502883ae69bab6d9cc50236f35a8"
+        sha256 "bca8cc619a6c590fb1241846ed4847ea04d7d6d7c62de0f5fb198cace03f57aa"
       end
     end
     on_intel do
       if Hardware::CPU.is_64_bit?
         url "https://github.com/devstudio-live/devstudio-proxy/releases/download/v#{version}/devproxy-linux-amd64"
-        sha256 "13c785644ef2f5566c5b7403288c59fbfd12eb932c0851dfbd72df49b5872d8c"
+        sha256 "8badafa22be20d895bbd19985b72308fa9b9ba260c67ad4d7a07561bc8660198"
       else
         url "https://github.com/devstudio-live/devstudio-proxy/releases/download/v#{version}/devproxy-linux-386"
-        sha256 "20b148d5e2a0892972b3b84eb67d9d541a2d6328652ab0bfb24a3c2a45e3de34"
+        sha256 "4dffb6a152e3a49d9c75e8af019b341c760fee20abf9d8a9562ea2847b8166bb"
       end
     end
   end
