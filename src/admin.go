@@ -21,6 +21,8 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
 		adminRestart(w, r)
 	case r.URL.Path == "/admin/logs" && r.Method == http.MethodGet:
 		adminLogs(w, r)
+	case r.URL.Path == "/admin/logs" && r.Method == http.MethodPost:
+		adminLogsJSON(w, r)
 	default:
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -132,7 +134,21 @@ func wantsJSONLogs(r *http.Request) bool {
 }
 
 func adminLogsJSON(w http.ResponseWriter, r *http.Request) {
-	since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+	var since int64
+	if r.Method == http.MethodPost {
+		var body struct {
+			Since int64 `json:"since"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusBadRequest)
+			json.NewEncoder(w).Encode(map[string]string{"error": "invalid json"}) //nolint:errcheck
+			return
+		}
+		since = body.Since
+	} else {
+		since, _ = strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+	}
 
 	logBuf.mu.Lock()
 	lines := logBuf.snapshotSince(since)
