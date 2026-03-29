@@ -23,6 +23,8 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
 		adminLogs(w, r)
 	case r.URL.Path == "/admin/logs" && r.Method == http.MethodPost:
 		adminLogsJSON(w, r)
+	case r.URL.Path == "/admin/events" && r.Method == http.MethodGet:
+		adminEvents(w, r)
 	default:
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -121,6 +123,47 @@ func adminLogs(w http.ResponseWriter, r *http.Request) {
 			}
 			b, _ := json.Marshal(line)
 			_, _ = w.Write([]byte("data: " + string(b) + "\n\n"))
+			flusher.Flush()
+		}
+	}
+}
+
+func adminEvents(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	// Send buffered events
+	eventBuf.mu.Lock()
+	buffered := eventBuf.snapshot()
+	eventBuf.mu.Unlock()
+
+	for _, evt := range buffered {
+		_, _ = w.Write(marshalSSEFrame(evt))
+	}
+	flusher.Flush()
+
+	// Subscribe to live events
+	ch := make(chan proxyEvent, 64)
+	eventBuf.subscribe(ch)
+	defer eventBuf.unsubscribe(ch)
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case evt, ok := <-ch:
+			if !ok {
+				return
+			}
+			_, _ = w.Write(marshalSSEFrame(evt))
 			flusher.Flush()
 		}
 	}

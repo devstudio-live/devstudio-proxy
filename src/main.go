@@ -51,6 +51,7 @@ func main() {
 	go startElasticPoolReaper()
 	go startRedisPoolReaper()
 	go startContextReaper()
+	go startHealthTicker()
 
 	handler := NewLoggingMiddleware(Handler{})
 
