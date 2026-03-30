@@ -176,6 +176,22 @@ export http_proxy=http://localhost:7700
 export https_proxy=http://localhost:7700
 ```
 
+## Run locally
+
+```sh
+cd src
+go run .                          # listens on :7700
+go run . -port 8080               # custom port
+go run . -port 7700 -log          # with request logging
+go run . -port 7700 -verbose      # log request headers
+```
+
+Verify it's running:
+
+```sh
+curl -x http://localhost:7700 https://example.com
+```
+
 ## Build from source
 
 ```sh
