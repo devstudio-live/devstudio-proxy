@@ -41,22 +41,42 @@ func installCATrust(caPath string) error {
 	return nil
 }
 
-// installCATrustMacOS opens a Terminal window to run the security(1) trust
-// command. The proxy runs as a Chrome native messaging host and therefore
-// lacks a GUI security session, which causes osascript "with administrator
-// privileges" to fail with "no user interaction was possible". Terminal.app
-// always runs in the user's GUI session, so sudo prompts work there.
+// installCATrustMacOS trusts the CA in the user's login keychain.
 //
-// The call returns as soon as Terminal opens (async); the flag is written
-// optimistically. If the user cancels, Re-trust Certificate removes the flag
-// and opens Terminal again.
+// The proxy runs as a Chrome native messaging host without a GUI security
+// session. Targeting the System keychain requires sudo and a GUI auth dialog,
+// which fails in this context. Instead we add to the login keychain, which
+// Chrome also reads for root CA trust and does not require root or a GUI
+// session. A macOS keychain unlock dialog may still appear on the first run.
 func installCATrustMacOS(caPath string) error {
-	// Shell command that Terminal will run. shellQuote handles the path.
+	// Expand ~ manually since exec.Command does not invoke a shell.
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return fmt.Errorf("could not determine home directory: %w", err)
+	}
+	loginKeychain := filepath.Join(homeDir, "Library", "Keychains", "login.keychain-db")
+
+	out, err := exec.Command(
+		"security", "add-trusted-cert",
+		"-d", "-r", "trustRoot",
+		"-k", loginKeychain,
+		caPath,
+	).CombinedOutput()
+	if err != nil {
+		// Fall back to Terminal+sudo for System keychain if login keychain fails.
+		return installCATrustMacOSTerminal(caPath, fmt.Sprintf("login keychain failed (%s), trying system keychain", strings.TrimSpace(string(out))))
+	}
+	return nil
+}
+
+// installCATrustMacOSTerminal is the fallback: opens a Terminal window to run
+// the security command with sudo against the System keychain.
+func installCATrustMacOSTerminal(caPath string, reason string) error {
+	log.Printf("proxy: %s", reason)
 	shellCmd := fmt.Sprintf(
-		"sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain %s && echo 'Certificate trusted. You can close this window.' || echo 'Trust failed.'; exit",
+		"sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain %s && echo 'Certificate trusted. You can close this window.' || echo 'Trust failed — try Re-trust Certificate in DevStudio.'; exit",
 		shellQuote(caPath),
 	)
-	// AppleScript string literal: double-quoted, internal " and \ escaped.
 	script := fmt.Sprintf(
 		`tell application "Terminal"
     activate
