@@ -66,7 +66,47 @@ func installCATrustMacOS(caPath string) error {
 		// Fall back to Terminal+sudo for System keychain if login keychain fails.
 		return installCATrustMacOSTerminal(caPath, fmt.Sprintf("login keychain failed (%s), trying system keychain", strings.TrimSpace(string(out))))
 	}
+
+	// On macOS 15+ the command can exit 0 without actually setting trust
+	// policy. Verify by checking that at least one trust setting was recorded.
+	if !verifyLoginKeychainTrust() {
+		return installCATrustMacOSTerminal(caPath, "login keychain trust silently ineffective, trying system keychain")
+	}
 	return nil
+}
+
+// verifyLoginKeychainTrust checks whether the user-domain trust settings
+// contain at least one entry with a non-zero number of trust settings for a
+// certificate whose label contains "DevStudio". This catches the macOS 15+
+// behaviour where add-trusted-cert exits 0 but sets no trust policy.
+func verifyLoginKeychainTrust() bool {
+	out, err := exec.Command("security", "dump-trust-settings", "-d").CombinedOutput()
+	if err != nil {
+		return false
+	}
+	// Walk output looking for our cert and its trust count.
+	// Format:  "Cert N: DevStudio Local CA\n   Number of trust settings : 1"
+	lines := strings.Split(string(out), "\n")
+	for i, line := range lines {
+		if !strings.Contains(line, "DevStudio") {
+			continue
+		}
+		// The trust count line follows the cert label line.
+		for j := i + 1; j < len(lines) && j <= i+3; j++ {
+			if strings.Contains(lines[j], "Number of trust settings") {
+				// "Number of trust settings : 0" means no trust was set.
+				parts := strings.Split(lines[j], ":")
+				if len(parts) >= 2 {
+					count := strings.TrimSpace(parts[len(parts)-1])
+					if count != "0" {
+						return true
+					}
+				}
+				return false
+			}
+		}
+	}
+	return false
 }
 
 // installCATrustMacOSTerminal is the fallback: opens a Terminal window to run
