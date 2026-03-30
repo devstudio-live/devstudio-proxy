@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"log"
@@ -13,6 +14,7 @@ import (
 // and trigger a restart via server.Close().
 var adminPort int
 var adminServer *http.Server
+var tlsAvailable bool
 
 func main() {
 	// Load layered config: defaults → system config file → user config file → env vars.
@@ -55,15 +57,39 @@ func main() {
 
 	handler := NewLoggingMiddleware(Handler{})
 
-	// Restart loop: /admin/restart closes adminServer; we re-listen until a hard error.
+	// ── One-time TLS setup (before loop) ─────────────────────────────────────
+	var tlsCfg *tls.Config
+	certPEM, keyPEM, caPath, fresh, certErr := ensureLocalCert()
+	if certErr != nil {
+		log.Printf("proxy: TLS cert unavailable (%v) — HTTPS disabled", certErr)
+	} else {
+		if fresh {
+			go func() { _ = installCATrust(caPath) }()
+		}
+		tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
+		if err != nil {
+			log.Printf("proxy: TLS key pair error (%v) — HTTPS disabled", err)
+		} else {
+			tlsCfg = &tls.Config{Certificates: []tls.Certificate{tlsCert}, MinVersion: tls.VersionTLS12}
+			tlsAvailable = true
+		}
+	}
+
+	// ── Restart loop ──────────────────────────────────────────────────────────
+	// Gotcha #1: newDualListener is called inside the loop — fresh listener on
+	// every iteration; a closed net.Listener cannot be reused.
 	for {
-		log.Printf("proxy: listening on :%d (log=%t verbose=%t)", adminPort, logEnabled.Load(), verboseEnabled.Load())
+		log.Printf("proxy: listening on :%d (log=%t verbose=%t tls=%t)", adminPort, logEnabled.Load(), verboseEnabled.Load(), tlsAvailable)
 		adminServer = &http.Server{
 			Addr:              fmt.Sprintf(":%d", adminPort),
 			Handler:           handler,
 			ReadHeaderTimeout: 5 * time.Second,
 		}
-		if err := adminServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		ln, err := newDualListener(fmt.Sprintf(":%d", adminPort), tlsCfg)
+		if err != nil {
+			log.Fatalf("listener error: %v", err)
+		}
+		if err := adminServer.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server error: %v", err)
 		}
 	}

@@ -38,6 +38,7 @@ func adminGetConfig(w http.ResponseWriter, r *http.Request) {
 		"port":    adminPort,
 		"log":     logEnabled.Load(),
 		"verbose": verboseEnabled.Load(),
+		"tls":     tlsAvailable,
 	})
 }
 
