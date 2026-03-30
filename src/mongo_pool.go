@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log"
 	"net/url"
 	"sync"
 	"time"
@@ -34,27 +35,40 @@ func buildMongoURI(conn dbConnection) string {
 	// which prevent the driver from doing replica-set discovery and trying to
 	// resolve internal hostnames that are unreachable from outside the cluster.
 	if conn.ConnectionString != "" {
+		log.Printf("mongo: using connection string (redacted): %s", redactMongoURI(conn.ConnectionString))
 		return conn.ConnectionString
 	}
 	port := conn.Port
 	if port == 0 {
 		port = 27017
 	}
+	var uri string
 	if conn.User != "" && conn.Password != "" {
-		authSource := conn.AuthSource
-		if authSource == "" {
-			authSource = "admin"
-		}
 		u := &url.URL{
 			Scheme:   "mongodb",
 			User:     url.UserPassword(conn.User, conn.Password),
 			Host:     fmt.Sprintf("%s:%d", conn.Host, port),
-			Path:     "/" + conn.Database,
-			RawQuery: "authSource=" + url.QueryEscape(authSource),
+			Path:     "/",
+			RawQuery: "authMechanism=DEFAULT&directConnection=true",
 		}
-		return u.String()
+		uri = u.String()
+	} else {
+		uri = fmt.Sprintf("mongodb://%s:%d/?directConnection=true", conn.Host, port)
 	}
-	return fmt.Sprintf("mongodb://%s:%d/%s", conn.Host, port, conn.Database)
+	log.Printf("mongo: built URI: %s", redactMongoURI(uri))
+	return uri
+}
+
+// redactMongoURI replaces the password in a MongoDB URI with "***".
+func redactMongoURI(uri string) string {
+	u, err := url.Parse(uri)
+	if err != nil || u.User == nil {
+		return uri
+	}
+	if _, hasPassword := u.User.Password(); hasPassword {
+		u.User = url.UserPassword(u.User.Username(), "***")
+	}
+	return u.String()
 }
 
 // mongoConnectionKey returns a SHA-256 hash of the connection config for pool keying.
