@@ -41,19 +41,42 @@ func installCATrust(caPath string) error {
 	return nil
 }
 
-// installCATrustMacOS uses osascript to invoke security(1) with
-// administrator privileges via a native macOS GUI elevation dialog —
-// no terminal needed.
+// installCATrustMacOS opens a Terminal window to run the security(1) trust
+// command. The proxy runs as a Chrome native messaging host and therefore
+// lacks a GUI security session, which causes osascript "with administrator
+// privileges" to fail with "no user interaction was possible". Terminal.app
+// always runs in the user's GUI session, so sudo prompts work there.
+//
+// The call returns as soon as Terminal opens (async); the flag is written
+// optimistically. If the user cancels, Re-trust Certificate removes the flag
+// and opens Terminal again.
 func installCATrustMacOS(caPath string) error {
-	script := fmt.Sprintf(
-		`do shell script "security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain %s" with administrator privileges`,
+	// Shell command that Terminal will run. shellQuote handles the path.
+	shellCmd := fmt.Sprintf(
+		"sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain %s && echo 'Certificate trusted. You can close this window.' || echo 'Trust failed.'; exit",
 		shellQuote(caPath),
+	)
+	// AppleScript string literal: double-quoted, internal " and \ escaped.
+	script := fmt.Sprintf(
+		`tell application "Terminal"
+    activate
+    do script %s
+end tell`,
+		asQuote(shellCmd),
 	)
 	out, err := exec.Command("osascript", "-e", script).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("osascript: %w: %s", err, out)
 	}
 	return nil
+}
+
+// asQuote wraps s in AppleScript double-quote delimiters, escaping any
+// internal backslashes and double quotes.
+func asQuote(s string) string {
+	s = strings.ReplaceAll(s, `\`, `\\`)
+	s = strings.ReplaceAll(s, `"`, `\"`)
+	return `"` + s + `"`
 }
 
 // installCATrustWindows uses PowerShell to invoke certutil with UAC elevation.
