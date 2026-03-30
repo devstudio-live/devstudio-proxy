@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -19,6 +21,8 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
 		adminPostConfig(w, r)
 	case r.URL.Path == "/admin/restart" && r.Method == http.MethodPost:
 		adminRestart(w, r)
+	case r.URL.Path == "/admin/trust-cert" && r.Method == http.MethodPost:
+		adminTrustCert(w, r)
 	case r.URL.Path == "/admin/logs" && r.Method == http.MethodGet:
 		adminLogs(w, r)
 	case r.URL.Path == "/admin/logs" && r.Method == http.MethodPost:
@@ -33,13 +37,38 @@ func handleAdmin(w http.ResponseWriter, r *http.Request) {
 }
 
 func adminGetConfig(w http.ResponseWriter, r *http.Request) {
+	certTrusted := false
+	if tlsCAPath != "" {
+		flagPath := filepath.Join(filepath.Dir(tlsCAPath), "ca-trusted.flag")
+		_, err := os.Stat(flagPath)
+		certTrusted = err == nil
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
-		"port":    adminPort,
-		"log":     logEnabled.Load(),
-		"verbose": verboseEnabled.Load(),
-		"tls":     tlsAvailable,
+		"port":         adminPort,
+		"log":          logEnabled.Load(),
+		"verbose":      verboseEnabled.Load(),
+		"tls":          tlsAvailable,
+		"cert_trusted": certTrusted,
 	})
+}
+
+func adminTrustCert(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if tlsCAPath == "" {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "TLS not available"}) //nolint:errcheck
+		return
+	}
+	// Remove the flag so installCATrust re-runs the OS dialog.
+	flagPath := filepath.Join(filepath.Dir(tlsCAPath), "ca-trusted.flag")
+	_ = os.Remove(flagPath)
+	if err := installCATrust(tlsCAPath); err != nil {
+		log.Printf("proxy: re-trust failed: %v", err)
+		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": err.Error()}) //nolint:errcheck
+		return
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{"ok": true}) //nolint:errcheck
 }
 
 func adminPostConfig(w http.ResponseWriter, r *http.Request) {

@@ -15,6 +15,7 @@ import (
 var adminPort int
 var adminServer *http.Server
 var tlsAvailable bool
+var tlsCAPath string // path to ca.crt; set once before the restart loop
 
 func main() {
 	// Load layered config: defaults → system config file → user config file → env vars.
@@ -63,6 +64,7 @@ func main() {
 	if certErr != nil {
 		log.Printf("proxy: TLS cert unavailable (%v) — HTTPS disabled", certErr)
 	} else {
+		tlsCAPath = caPath
 		if fresh {
 			go func() { _ = installCATrust(caPath) }()
 		}
