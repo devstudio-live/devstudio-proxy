@@ -48,8 +48,9 @@ func adminGetConfig(w http.ResponseWriter, r *http.Request) {
 		"port":         adminPort,
 		"log":          logEnabled.Load(),
 		"verbose":      verboseEnabled.Load(),
-		"tls":          tlsAvailable,
-		"cert_trusted": certTrusted,
+		"tls":             tlsAvailable,
+		"cert_trusted":    certTrusted,
+		"firefox_trusted": firefoxPolicyInstalled(),
 	})
 }
 
@@ -60,9 +61,10 @@ func adminTrustCert(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": "TLS not available"}) //nolint:errcheck
 		return
 	}
-	// Remove the flag so installCATrust re-runs the OS dialog.
+	// Remove flags so installCATrust re-runs the OS dialog and Firefox policy.
 	flagPath := filepath.Join(filepath.Dir(tlsCAPath), "ca-trusted.flag")
 	_ = os.Remove(flagPath)
+	removeFirefoxPolicyFlag()
 	if err := installCATrust(tlsCAPath); err != nil {
 		log.Printf("proxy: re-trust failed: %v", err)
 		json.NewEncoder(w).Encode(map[string]interface{}{"ok": false, "error": err.Error()}) //nolint:errcheck

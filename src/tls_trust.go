@@ -38,6 +38,10 @@ func installCATrust(caPath string) error {
 
 	// Write flag to prevent the OS dialog from appearing on future startups.
 	_ = os.WriteFile(flagPath, []byte("ok"), 0644)
+
+	// Also install Firefox enterprise roots policy so Firefox reads the OS store.
+	go installFirefoxEnterpriseRoots()
+
 	return nil
 }
 
