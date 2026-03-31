@@ -594,6 +594,86 @@ All tests use `httptest.NewServer` / `httptest.NewTLSServer` — no mocks, no ne
 
 ---
 
+## Integration Tests
+
+Integration tests connect to real external services (MongoDB Atlas, etc.) and are excluded from the default `make test` run. They require a `.env` file with credentials.
+
+### Setup
+
+```sh
+cp .env.sample .env
+# Edit .env and fill in the connection string(s)
+```
+
+`.env` is gitignored — credentials are never committed.
+
+### Environment variables
+
+| Variable | Description |
+|----------|-------------|
+| `MONGO_TEST_CONNECTION_STRING` | Full MongoDB connection URI for Atlas integration tests |
+
+### Run
+
+```sh
+# All integration tests
+go test -v -tags integration ./...
+
+# MongoDB Atlas tests only
+go test -v -tags integration -run TestMongoAtlas ./...
+```
+
+You can also pass the connection string inline without a `.env` file:
+
+```sh
+MONGO_TEST_CONNECTION_STRING="mongodb://user:pass@host:27017/..." \
+  go test -v -tags integration -run TestMongoAtlas ./...
+```
+
+Tests skip automatically (rather than fail) when a required env var is not set.
+
+---
+
+## Running locally for debugging
+
+### Start the proxy
+
+From the `src/` directory:
+
+```sh
+go run . -log -verbose
+```
+
+This starts the proxy on the default port (`7700`) with full request and header logging enabled. All `mongo:` debug log lines will appear in the terminal as connections come in.
+
+### Trigger a MongoDB connection
+
+```bash
+curl -s -X POST http://localhost:7700/test \
+  -H "X-DevStudio-Gateway-Route: 1" \
+  -H "X-DevStudio-Gateway-Protocol: mongo" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "connection": {
+      "host": "localhost",
+      "port": 27017,
+      "database": "mydb",
+      "user": "myuser",
+      "password": "mypassword"
+    }
+  }'
+```
+
+The logs will show:
+1. All input fields passed to `buildMongoURI` (host, port, database, user, hasPassword, authSource)
+2. Which URI branch was taken (authenticated vs unauthenticated, raw connection string vs built)
+3. The exact URI sent to the MongoDB driver
+4. Whether `mongo.Connect` succeeded or the exact error message
+
+> **Note:** the exact URI log (including plaintext password) is temporary debug output — remove it once the issue is resolved.
+
+---
+
 ## Implementation notes for developers
 
 ### Why not `httputil.ReverseProxy`?

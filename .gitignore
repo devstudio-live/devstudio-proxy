@@ -1,5 +1,6 @@
 .DS_Store*
 src/proxy
 src/dist/
+src/.env
 .claude
 devstudio-proxy.code-workspace

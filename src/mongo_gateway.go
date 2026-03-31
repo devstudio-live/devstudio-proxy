@@ -73,6 +73,7 @@ func handleMongoTest(w http.ResponseWriter, r *http.Request, req dbRequest) {
 	defer cancel()
 
 	if err := client.Ping(ctx, nil); err != nil {
+		evictMongoClient(req.Connection)
 		json.NewEncoder(w).Encode(dbResponse{Error: err.Error(), Duration: ms(t0)})
 		return
 	}
