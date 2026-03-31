@@ -55,6 +55,8 @@ func handleMongoGateway(w http.ResponseWriter, r *http.Request) {
 		handleMongoDescribe(w, r, req)
 	case "databases":
 		handleMongoDatabases(w, r, req)
+	case "admin":
+		handleMongoAdmin(w, r, req)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(dbResponse{Error: "unknown gateway endpoint: " + path})
@@ -320,6 +322,83 @@ func bsonValueToAny(v any) any {
 		return string(b)
 	default:
 		return v
+	}
+}
+
+// handleMongoAdmin runs an arbitrary MongoDB command against a specified database
+// (req.Table, defaulting to "admin"). The command document is given as JSON in req.SQL.
+// The result is returned as a JSON string in rows[0][0] so the client can parse it.
+func handleMongoAdmin(w http.ResponseWriter, r *http.Request, req dbRequest) {
+	t0 := time.Now()
+	client, err := getPooledMongoClient(req.Connection)
+	if err != nil {
+		json.NewEncoder(w).Encode(dbResponse{Error: err.Error(), Duration: ms(t0)})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), queryTimeout)
+	defer cancel()
+
+	cmdStr := strings.TrimSpace(req.SQL)
+	if cmdStr == "" {
+		json.NewEncoder(w).Encode(dbResponse{Error: "sql field must contain the command document (JSON)", Duration: ms(t0)})
+		return
+	}
+	var cmdDoc bson.D
+	if err := bson.UnmarshalExtJSON([]byte(cmdStr), true, &cmdDoc); err != nil {
+		json.NewEncoder(w).Encode(dbResponse{Error: "invalid command JSON: " + err.Error(), Duration: ms(t0)})
+		return
+	}
+
+	dbName := req.Table
+	if dbName == "" {
+		dbName = "admin"
+	}
+
+	var result bson.M
+	if err := client.Database(dbName).RunCommand(ctx, cmdDoc).Decode(&result); err != nil {
+		json.NewEncoder(w).Encode(dbResponse{Error: err.Error(), Duration: ms(t0)})
+		return
+	}
+
+	safe := deepBsonToAny(result)
+	b, err := json.Marshal(safe)
+	if err != nil {
+		json.NewEncoder(w).Encode(dbResponse{Error: "marshal error: " + err.Error(), Duration: ms(t0)})
+		return
+	}
+
+	json.NewEncoder(w).Encode(dbResponse{
+		Columns:  []dbColumn{{Name: "result", Type: "json"}},
+		Rows:     [][]any{{string(b)}},
+		RowCount: 1,
+		Duration: ms(t0),
+	})
+}
+
+// deepBsonToAny recursively converts bson.M / bson.D / bson.A and primitive types
+// to JSON-safe Go values, so they can be marshalled with encoding/json.
+func deepBsonToAny(v any) any {
+	switch val := v.(type) {
+	case bson.M:
+		m := make(map[string]any, len(val))
+		for k, v2 := range val {
+			m[k] = deepBsonToAny(v2)
+		}
+		return m
+	case bson.D:
+		m := make(map[string]any, len(val))
+		for _, e := range val {
+			m[e.Key] = deepBsonToAny(e.Value)
+		}
+		return m
+	case bson.A:
+		arr := make([]any, len(val))
+		for i, v2 := range val {
+			arr[i] = deepBsonToAny(v2)
+		}
+		return arr
+	default:
+		return bsonValueToAny(v)
 	}
 }
 
