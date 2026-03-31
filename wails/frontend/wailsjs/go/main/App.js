@@ -5,3 +5,31 @@
 export function GetVersion() {
   return window['go']['main']['App']['GetVersion']();
 }
+
+export function Maximise() {
+  return window['go']['main']['App']['Maximise']();
+}
+
+export function Minimise() {
+  return window['go']['main']['App']['Minimise']();
+}
+
+export function ToggleFullscreen() {
+  return window['go']['main']['App']['ToggleFullscreen']();
+}
+
+export function ToggleMaximise() {
+  return window['go']['main']['App']['ToggleMaximise']();
+}
+
+export function UnFullscreen() {
+  return window['go']['main']['App']['UnFullscreen']();
+}
+
+export function UnMaximise() {
+  return window['go']['main']['App']['UnMaximise']();
+}
+
+export function UnMinimise() {
+  return window['go']['main']['App']['UnMinimise']();
+}
