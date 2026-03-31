@@ -1,9 +1,25 @@
 package main
 
-import "context"
+import (
+	"context"
+	"encoding/base64"
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"time"
+
+	"devstudio/proxy/proxycore"
+
+	"github.com/wailsapp/wails/v2/pkg/runtime"
+)
+
+const maxProxyResponseSize = 5 << 20 // 5 MB
 
 type App struct {
-	ctx context.Context
+	ctx   context.Context
+	proxy *proxycore.Server
 }
 
 func NewApp() *App {
@@ -12,10 +28,206 @@ func NewApp() *App {
 
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
+	a.proxy = proxycore.NewServer(proxycore.Options{Port: 0})
+	a.proxy.LogEnabled.Store(true)
+	a.proxy.Start(5 * time.Minute)
+
+	go a.emitLogStream()
+	go a.emitEventStream()
 }
 
-func (a *App) shutdown(ctx context.Context) {}
+func (a *App) shutdown(ctx context.Context) {
+	if a.proxy != nil {
+		a.proxy.Shutdown()
+	}
+}
+
+// ── IPC Bindings ─────────────────────────────────────────────────────────────
 
 func (a *App) GetVersion() string {
-	return "dev"
+	return proxycore.Version
+}
+
+func (a *App) HealthCheck() map[string]any {
+	return map[string]any{
+		"status": "ok",
+		"mode":   "wails",
+	}
+}
+
+func (a *App) GetConfig() string {
+	req := httptest.NewRequest(http.MethodGet, "/admin/config", nil)
+	rec := httptest.NewRecorder()
+	a.proxy.Handler.ServeHTTP(rec, req)
+	return rec.Body.String()
+}
+
+func (a *App) UpdateConfig(opts string) string {
+	req := httptest.NewRequest(http.MethodPost, "/admin/config", strings.NewReader(opts))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	a.proxy.Handler.ServeHTTP(rec, req)
+	return rec.Body.String()
+}
+
+func (a *App) Restart() string {
+	// In Wails mode, restart means recreating the proxy server in-process.
+	// For now, return ok — the frontend can reload the window.
+	return `{"ok":true}`
+}
+
+func (a *App) TrustCert() string {
+	req := httptest.NewRequest(http.MethodPost, "/admin/trust-cert", nil)
+	rec := httptest.NewRecorder()
+	a.proxy.Handler.ServeHTTP(rec, req)
+	return rec.Body.String()
+}
+
+func (a *App) GetLogSnapshot() string {
+	a.proxy.LogBuf.Lock()
+	entries := a.proxy.LogBuf.Snapshot()
+	a.proxy.LogBuf.Unlock()
+	b, _ := json.Marshal(map[string]any{"lines": entries})
+	return string(b)
+}
+
+func (a *App) GetEventSnapshot() string {
+	a.proxy.EventBuf.Lock()
+	events := a.proxy.EventBuf.Snapshot()
+	a.proxy.EventBuf.Unlock()
+	b, _ := json.Marshal(map[string]any{"events": events})
+	return string(b)
+}
+
+func (a *App) StoreContext(payload string) string {
+	req := httptest.NewRequest(http.MethodPost, "/mcp/context", strings.NewReader(payload))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	a.proxy.Handler.ServeHTTP(rec, req)
+	return rec.Body.String()
+}
+
+func (a *App) LoadContext(id string) string {
+	req := httptest.NewRequest(http.MethodGet, "/mcp/context/"+id, nil)
+	rec := httptest.NewRecorder()
+	a.proxy.Handler.ServeHTTP(rec, req)
+	return rec.Body.String()
+}
+
+func (a *App) MCPGateway(body string) string {
+	req := httptest.NewRequest(http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	a.proxy.Handler.ServeHTTP(rec, req)
+	return rec.Body.String()
+}
+
+func (a *App) DBGateway(protocol string, endpoint string, body string) string {
+	req := httptest.NewRequest(http.MethodPost, "/"+endpoint, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-DevStudio-Gateway-Route", "true")
+	req.Header.Set("X-DevStudio-Gateway-Protocol", protocol)
+	rec := httptest.NewRecorder()
+	a.proxy.Handler.ServeHTTP(rec, req)
+	return rec.Body.String()
+}
+
+// ProxyResponse is the structured return value for ProxyRequest.
+type ProxyResponse struct {
+	StatusCode   int               `json:"statusCode"`
+	Headers      map[string]string `json:"headers"`
+	Body         string            `json:"body"`
+	BodyEncoding string            `json:"bodyEncoding"` // "text" or "base64"
+}
+
+func (a *App) ProxyRequest(method, url string, headers map[string]string, body string) ProxyResponse {
+	var bodyReader io.Reader
+	if body != "" {
+		bodyReader = strings.NewReader(body)
+	}
+
+	outReq, err := http.NewRequest(method, url, bodyReader)
+	if err != nil {
+		return ProxyResponse{StatusCode: 0, Body: "request error: " + err.Error(), BodyEncoding: "text"}
+	}
+	for k, v := range headers {
+		outReq.Header.Set(k, v)
+	}
+
+	resp, err := proxycore.Transport.RoundTrip(outReq)
+	if err != nil {
+		return ProxyResponse{StatusCode: 0, Body: "upstream error: " + err.Error(), BodyEncoding: "text"}
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxProxyResponseSize+1))
+	if err != nil {
+		return ProxyResponse{StatusCode: resp.StatusCode, Body: "read error: " + err.Error(), BodyEncoding: "text"}
+	}
+	if len(respBody) > maxProxyResponseSize {
+		return ProxyResponse{StatusCode: resp.StatusCode, Body: "response too large (>5MB)", BodyEncoding: "text"}
+	}
+
+	respHeaders := make(map[string]string, len(resp.Header))
+	for k := range resp.Header {
+		respHeaders[k] = resp.Header.Get(k)
+	}
+
+	ct := resp.Header.Get("Content-Type")
+	isText := ct == "" || strings.HasPrefix(ct, "text/") ||
+		strings.Contains(ct, "json") || strings.Contains(ct, "xml") ||
+		strings.Contains(ct, "javascript") || strings.Contains(ct, "html")
+
+	if isText {
+		return ProxyResponse{
+			StatusCode:   resp.StatusCode,
+			Headers:      respHeaders,
+			Body:         string(respBody),
+			BodyEncoding: "text",
+		}
+	}
+	return ProxyResponse{
+		StatusCode:   resp.StatusCode,
+		Headers:      respHeaders,
+		Body:         base64.StdEncoding.EncodeToString(respBody),
+		BodyEncoding: "base64",
+	}
+}
+
+// ── SSE → Wails Events ──────────────────────────────────────────────────────
+
+func (a *App) emitLogStream() {
+	// Emit snapshot first so the frontend gets backfill on connect.
+	a.proxy.LogBuf.Lock()
+	snapshot := a.proxy.LogBuf.Snapshot()
+	a.proxy.LogBuf.Unlock()
+	for _, entry := range snapshot {
+		runtime.EventsEmit(a.ctx, "proxy-log", entry.Line)
+	}
+
+	ch := make(chan string, 64)
+	a.proxy.LogBuf.Subscribe(ch)
+	defer a.proxy.LogBuf.Unsubscribe(ch)
+	for line := range ch {
+		runtime.EventsEmit(a.ctx, "proxy-log", line)
+	}
+}
+
+func (a *App) emitEventStream() {
+	// Emit snapshot first so the frontend gets backfill on connect.
+	a.proxy.EventBuf.Lock()
+	snapshot := a.proxy.EventBuf.Snapshot()
+	a.proxy.EventBuf.Unlock()
+	for _, evt := range snapshot {
+		b, _ := json.Marshal(evt)
+		runtime.EventsEmit(a.ctx, "proxy-event", string(b))
+	}
+
+	ch := make(chan proxycore.ProxyEvent, 64)
+	a.proxy.EventBuf.Subscribe(ch)
+	defer a.proxy.EventBuf.Unsubscribe(ch)
+	for evt := range ch {
+		b, _ := json.Marshal(evt)
+		runtime.EventsEmit(a.ctx, "proxy-event", string(b))
+	}
 }

@@ -8,14 +8,9 @@ import (
 	"net/http"
 	"os"
 	"time"
-)
 
-// adminPort and adminServer are package-level so admin.go can read the port
-// and trigger a restart via server.Close().
-var adminPort int
-var adminServer *http.Server
-var tlsAvailable bool
-var tlsCAPath string // path to ca.crt; set once before the restart loop
+	"devstudio/proxy/proxycore"
+)
 
 // isFlagSet returns true if the named flag was explicitly provided on the CLI.
 func isFlagSet(name string) bool {
@@ -29,9 +24,7 @@ func isFlagSet(name string) bool {
 }
 
 func main() {
-	// Load layered config: defaults → system config file → user config file → env vars.
-	// The resolved values become flag defaults, so CLI flags still override everything.
-	cfg, err := loadConfig()
+	cfg, err := proxycore.LoadConfig()
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
@@ -46,79 +39,65 @@ func main() {
 	flag.Parse()
 
 	if *showVersion {
-		fmt.Println(Version)
+		fmt.Println(proxycore.Version)
 		os.Exit(0)
 	}
 
-	// Wire atomic bools from CLI flags so admin endpoints can toggle them at runtime.
-	logEnabled.Store(*enableLog || *verbose)
-	verboseEnabled.Store(*verbose)
+	srv := proxycore.NewServer(proxycore.Options{
+		Port:        *port,
+		MCPRefresh:  *mcpRefresh,
+		MCPFallback: *mcpFallback,
+	})
 
-	// Wire log output through the ring buffer so /admin/logs can stream it.
-	initLogOutput()
+	srv.LogEnabled.Store(*enableLog || *verbose)
+	srv.VerboseEnabled.Store(*verbose)
 
-	// If --https was explicitly passed on the CLI, persist it so the restart
-	// loop (which re-reads the config file) honours the override.
+	// If --https was explicitly passed on the CLI, persist it.
 	if isFlagSet("https") {
-		_ = persistConfigKey("HTTPS", fmt.Sprintf("%t", *httpsFlag))
+		_ = proxycore.PersistConfigKey("HTTPS", fmt.Sprintf("%t", *httpsFlag))
 	}
 
-	adminPort = *port
-	mcpFallbackEnabled = *mcpFallback
-	initMCPRuntime(*mcpRefresh)
-
-	go startPoolReaper()
-	go startMongoPoolReaper()
-	go startElasticPoolReaper()
-	go startRedisPoolReaper()
-	go startContextReaper()
-	go startHealthTicker()
-
-	handler := NewLoggingMiddleware(Handler{})
+	srv.Start(*mcpRefresh)
 
 	// ── Restart loop ──────────────────────────────────────────────────────────
-	// TLS setup is inside the loop so it can react to config changes across restarts.
-	// Gotcha #1: newDualListener is called inside the loop — fresh listener on
-	// every iteration; a closed net.Listener cannot be reused.
 	for {
-		// Re-read config to pick up HTTPS toggle changes persisted by admin API.
-		loopCfg, _ := loadConfig()
+		loopCfg, _ := proxycore.LoadConfig()
 		httpsWanted := loopCfg.HTTPS
 
 		var tlsCfg *tls.Config
-		tlsAvailable = false
-		tlsCAPath = ""
+		srv.TLSAvailable = false
+		srv.TLSCAPath = ""
 
 		if httpsWanted {
-			certPEM, keyPEM, caPath, fresh, certErr := ensureLocalCert()
+			certPEM, keyPEM, caPath, fresh, certErr := proxycore.EnsureLocalCert()
 			if certErr != nil {
 				log.Printf("proxy: TLS cert unavailable (%v) — HTTPS disabled", certErr)
 			} else {
-				tlsCAPath = caPath
+				srv.TLSCAPath = caPath
 				if fresh {
-					go func() { _ = installCATrust(caPath) }()
+					go func() { _ = proxycore.InstallCATrust(caPath) }()
 				}
 				tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
 				if err != nil {
 					log.Printf("proxy: TLS key pair error (%v) — HTTPS disabled", err)
 				} else {
 					tlsCfg = &tls.Config{Certificates: []tls.Certificate{tlsCert}, MinVersion: tls.VersionTLS12}
-					tlsAvailable = true
+					srv.TLSAvailable = true
 				}
 			}
 		}
 
-		log.Printf("proxy: listening on :%d (log=%t verbose=%t tls=%t)", adminPort, logEnabled.Load(), verboseEnabled.Load(), tlsAvailable)
-		adminServer = &http.Server{
-			Addr:              fmt.Sprintf(":%d", adminPort),
-			Handler:           handler,
+		log.Printf("proxy: listening on :%d (log=%t verbose=%t tls=%t)", srv.AdminPort, srv.LogEnabled.Load(), srv.VerboseEnabled.Load(), srv.TLSAvailable)
+		srv.AdminServer = &http.Server{
+			Addr:              fmt.Sprintf(":%d", srv.AdminPort),
+			Handler:           srv.Handler,
 			ReadHeaderTimeout: 5 * time.Second,
 		}
-		ln, err := newDualListener(fmt.Sprintf(":%d", adminPort), tlsCfg)
+		ln, err := proxycore.NewDualListener(fmt.Sprintf(":%d", srv.AdminPort), tlsCfg)
 		if err != nil {
 			log.Fatalf("listener error: %v", err)
 		}
-		if err := adminServer.Serve(ln); err != nil && err != http.ErrServerClosed {
+		if err := srv.AdminServer.Serve(ln); err != nil && err != http.ErrServerClosed {
 			log.Fatalf("server error: %v", err)
 		}
 	}
