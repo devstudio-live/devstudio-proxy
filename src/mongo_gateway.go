@@ -57,6 +57,8 @@ func handleMongoGateway(w http.ResponseWriter, r *http.Request) {
 		handleMongoDatabases(w, r, req)
 	case "admin":
 		handleMongoAdmin(w, r, req)
+	case "aggregate":
+		handleMongoAggregate(w, r, req)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(dbResponse{Error: "unknown gateway endpoint: " + path})
@@ -323,6 +325,82 @@ func bsonValueToAny(v any) any {
 	default:
 		return v
 	}
+}
+
+// handleMongoAggregate executes an aggregation pipeline against a collection.
+// req.Table = collection name, req.SQL = JSON array of pipeline stages.
+// A $limit stage is appended automatically if none is present and req.Limit > 0.
+func handleMongoAggregate(w http.ResponseWriter, r *http.Request, req dbRequest) {
+	t0 := time.Now()
+	if req.Table == "" {
+		json.NewEncoder(w).Encode(dbResponse{Error: "collection name is required (table field)", Duration: ms(t0)})
+		return
+	}
+	client, err := getPooledMongoClient(req.Connection)
+	if err != nil {
+		json.NewEncoder(w).Encode(dbResponse{Error: err.Error(), Duration: ms(t0)})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), queryTimeout)
+	defer cancel()
+
+	pipelineStr := strings.TrimSpace(req.SQL)
+	if pipelineStr == "" {
+		pipelineStr = "[]"
+	}
+	var pipeline bson.A
+	if err := bson.UnmarshalExtJSON([]byte(pipelineStr), true, &pipeline); err != nil {
+		json.NewEncoder(w).Encode(dbResponse{Error: "invalid pipeline JSON: " + err.Error(), Duration: ms(t0)})
+		return
+	}
+
+	// Append $limit if no explicit $limit stage exists and req.Limit > 0
+	if req.Limit > 0 {
+		hasLimit := false
+		for _, stage := range pipeline {
+			if m, ok := stage.(bson.D); ok {
+				for _, e := range m {
+					if e.Key == "$limit" {
+						hasLimit = true
+						break
+					}
+				}
+			} else if m, ok := stage.(bson.M); ok {
+				if _, ok := m["$limit"]; ok {
+					hasLimit = true
+				}
+			}
+			if hasLimit {
+				break
+			}
+		}
+		if !hasLimit {
+			pipeline = append(pipeline, bson.D{{Key: "$limit", Value: int64(req.Limit)}})
+		}
+	}
+
+	coll := client.Database(req.Connection.Database).Collection(req.Table)
+	opts := options.Aggregate().SetAllowDiskUse(true)
+	cursor, err := coll.Aggregate(ctx, pipeline, opts)
+	if err != nil {
+		json.NewEncoder(w).Encode(dbResponse{Error: err.Error(), Duration: ms(t0)})
+		return
+	}
+	defer cursor.Close(ctx)
+
+	var docs []bson.M
+	if err := cursor.All(ctx, &docs); err != nil {
+		json.NewEncoder(w).Encode(dbResponse{Error: err.Error(), Duration: ms(t0)})
+		return
+	}
+
+	columns, rows := docsToColumnsRows(docs)
+	json.NewEncoder(w).Encode(dbResponse{
+		Columns:  columns,
+		Rows:     rows,
+		RowCount: len(rows),
+		Duration: ms(t0),
+	})
 }
 
 // handleMongoAdmin runs an arbitrary MongoDB command against a specified database
