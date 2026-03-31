@@ -24,7 +24,7 @@ WAILS_BIN = $(WAILS_DIR)/build/bin
 GOBIN     = $(shell go env GOPATH)/bin
 WAILS     = $(GOBIN)/wails
 
-.PHONY: all full clean test checksums wails-setup wails-mac wails-full $(PLATFORMS_ALL)
+.PHONY: all full clean test checksums wails-setup wails-mac wails-dev wails-full $(PLATFORMS_ALL)
 
 all: $(PLATFORMS_DARWIN) checksums
 
@@ -60,6 +60,10 @@ wails-mac: wails-setup
 		-extract arm64  -output $(WAILS_BIN)/devproxy-darwin-arm64
 	lipo $(WAILS_BIN)/devproxy.app/Contents/MacOS/devproxy \
 		-extract x86_64 -output $(WAILS_BIN)/devproxy-darwin-amd64
+
+wails-dev: wails-mac
+	DEVSTUDIO_TARGET_URL=http://localhost:5173 \
+		$(WAILS_BIN)/devproxy.app/Contents/MacOS/devproxy
 
 # All platforms: macOS (as above) + Windows + Linux
 wails-full: wails-mac

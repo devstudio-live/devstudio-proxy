@@ -4,6 +4,7 @@ import (
 	"embed"
 	"log"
 	"net/url"
+	"os"
 
 	"github.com/wailsapp/wails/v2"
 	"github.com/wailsapp/wails/v2/pkg/options"
@@ -16,7 +17,11 @@ var assets embed.FS
 func main() {
 	app := NewApp()
 
-	target, _ := url.Parse("https://www.devstudio.live")
+	targetURL := "https://www.devstudio.live"
+	if envURL := os.Getenv("DEVSTUDIO_TARGET_URL"); envURL != "" {
+		targetURL = envURL
+	}
+	target, _ := url.Parse(targetURL)
 	handler := NewProxyHandler(target, assets)
 
 	err := wails.Run(&options.App{
