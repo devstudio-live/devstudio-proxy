@@ -3,7 +3,11 @@ DIST    = dist
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS = -ldflags="-s -w -X main.Version=$(VERSION)"
 
-PLATFORMS = \
+PLATFORMS_DARWIN = \
+	darwin/amd64  \
+	darwin/arm64
+
+PLATFORMS_ALL = \
 	windows/amd64 \
 	windows/arm64 \
 	darwin/amd64  \
@@ -13,11 +17,15 @@ PLATFORMS = \
 	linux/386     \
 	linux/arm
 
-.PHONY: all clean test checksums $(PLATFORMS)
+PLATFORMS = $(PLATFORMS_DARWIN)
 
-all: $(PLATFORMS) checksums
+.PHONY: all full clean test checksums $(PLATFORMS_ALL)
 
-$(PLATFORMS):
+all: $(PLATFORMS_DARWIN) checksums
+
+full: $(PLATFORMS_ALL) checksums
+
+$(PLATFORMS_ALL):
 	$(eval OS   := $(firstword $(subst /, ,$@)))
 	$(eval ARCH := $(lastword $(subst /, ,$@)))
 	$(eval EXT  := $(if $(filter windows,$(OS)),.exe,))
