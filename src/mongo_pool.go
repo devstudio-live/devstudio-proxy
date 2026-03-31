@@ -46,9 +46,19 @@ func buildMongoURI(conn dbConnection) string {
 	}
 	var uri string
 	if conn.User != "" && conn.Password != "" {
+		// Decode first in case the credentials are already percent-encoded,
+		// then re-encode via url.UserPassword to avoid double-encoding.
+		decodedUser, err := url.PathUnescape(conn.User)
+		if err != nil {
+			decodedUser = conn.User
+		}
+		decodedPass, err := url.PathUnescape(conn.Password)
+		if err != nil {
+			decodedPass = conn.Password
+		}
 		u := &url.URL{
 			Scheme: "mongodb",
-			User:   url.UserPassword(conn.User, conn.Password),
+			User:   url.UserPassword(decodedUser, decodedPass),
 			Host:   fmt.Sprintf("%s:%d", conn.Host, port),
 			Path:   "/",
 		}
@@ -103,11 +113,22 @@ func encodeMongoCredentials(cs string) string {
 		password = userinfo[colonIdx+1:]
 	}
 
-	log.Printf("mongo: encoding credentials — username=%q", username)
+	// Decode first in case the credentials are already percent-encoded,
+	// then re-encode via url.UserPassword to avoid double-encoding.
+	decodedUser, err := url.PathUnescape(username)
+	if err != nil {
+		decodedUser = username
+	}
+	decodedPass, err := url.PathUnescape(password)
+	if err != nil {
+		decodedPass = password
+	}
+
+	log.Printf("mongo: encoding credentials — username=%q", decodedUser)
 
 	// url.UserPassword encodes both fields using the same rules the Go HTTP
 	// library applies to userinfo, percent-encoding all special characters.
-	encoded := scheme + url.UserPassword(username, password).String() + "@" + hostpart + afterAuthority
+	encoded := scheme + url.UserPassword(decodedUser, decodedPass).String() + "@" + hostpart + afterAuthority
 	return encoded
 }
 
