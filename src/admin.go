@@ -43,12 +43,15 @@ func adminGetConfig(w http.ResponseWriter, r *http.Request) {
 		_, err := os.Stat(flagPath)
 		certTrusted = err == nil
 	}
+	// Read persisted HTTPS config (may differ from runtime tls state if restart is needed).
+	persistedCfg, _ := loadConfig()
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
-		"port":         adminPort,
-		"log":          logEnabled.Load(),
-		"verbose":      verboseEnabled.Load(),
+		"port":            adminPort,
+		"log":             logEnabled.Load(),
+		"verbose":         verboseEnabled.Load(),
 		"tls":             tlsAvailable,
+		"https_enabled":   persistedCfg.HTTPS,
 		"cert_trusted":    certTrusted,
 		"firefox_trusted": firefoxPolicyInstalled(),
 	})
@@ -77,6 +80,7 @@ func adminPostConfig(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Log     *bool `json:"log"`
 		Verbose *bool `json:"verbose"`
+		HTTPS   *bool `json:"https"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -93,11 +97,24 @@ func adminPostConfig(w http.ResponseWriter, r *http.Request) {
 			logEnabled.Store(true)
 		}
 	}
+	restartRequired := false
+	if body.HTTPS != nil {
+		val := "false"
+		if *body.HTTPS {
+			val = "true"
+		}
+		if err := persistConfigKey("HTTPS", val); err != nil {
+			log.Printf("proxy: failed to persist HTTPS config: %v", err)
+		} else {
+			restartRequired = true
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
-		"ok":      true,
-		"log":     logEnabled.Load(),
-		"verbose": verboseEnabled.Load(),
+		"ok":               true,
+		"log":              logEnabled.Load(),
+		"verbose":          verboseEnabled.Load(),
+		"restart_required": restartRequired,
 	})
 }
 

@@ -17,6 +17,17 @@ var adminServer *http.Server
 var tlsAvailable bool
 var tlsCAPath string // path to ca.crt; set once before the restart loop
 
+// isFlagSet returns true if the named flag was explicitly provided on the CLI.
+func isFlagSet(name string) bool {
+	found := false
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == name {
+			found = true
+		}
+	})
+	return found
+}
+
 func main() {
 	// Load layered config: defaults → system config file → user config file → env vars.
 	// The resolved values become flag defaults, so CLI flags still override everything.
@@ -31,6 +42,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "print version and exit")
 	mcpRefresh := flag.Duration("mcp-refresh", cfg.MCPRefresh, "MCP script refresh interval (0 to disable)")
 	mcpFallback := flag.Bool("mcp-fallback", cfg.MCPFallback, "enable remote MCP forward fallback")
+	httpsFlag := flag.Bool("https", cfg.HTTPS, "enable HTTPS/TLS (default: off)")
 	flag.Parse()
 
 	if *showVersion {
@@ -45,6 +57,12 @@ func main() {
 	// Wire log output through the ring buffer so /admin/logs can stream it.
 	initLogOutput()
 
+	// If --https was explicitly passed on the CLI, persist it so the restart
+	// loop (which re-reads the config file) honours the override.
+	if isFlagSet("https") {
+		_ = persistConfigKey("HTTPS", fmt.Sprintf("%t", *httpsFlag))
+	}
+
 	adminPort = *port
 	mcpFallbackEnabled = *mcpFallback
 	initMCPRuntime(*mcpRefresh)
@@ -58,29 +76,38 @@ func main() {
 
 	handler := NewLoggingMiddleware(Handler{})
 
-	// ── One-time TLS setup (before loop) ─────────────────────────────────────
-	var tlsCfg *tls.Config
-	certPEM, keyPEM, caPath, fresh, certErr := ensureLocalCert()
-	if certErr != nil {
-		log.Printf("proxy: TLS cert unavailable (%v) — HTTPS disabled", certErr)
-	} else {
-		tlsCAPath = caPath
-		if fresh {
-			go func() { _ = installCATrust(caPath) }()
-		}
-		tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
-		if err != nil {
-			log.Printf("proxy: TLS key pair error (%v) — HTTPS disabled", err)
-		} else {
-			tlsCfg = &tls.Config{Certificates: []tls.Certificate{tlsCert}, MinVersion: tls.VersionTLS12}
-			tlsAvailable = true
-		}
-	}
-
 	// ── Restart loop ──────────────────────────────────────────────────────────
+	// TLS setup is inside the loop so it can react to config changes across restarts.
 	// Gotcha #1: newDualListener is called inside the loop — fresh listener on
 	// every iteration; a closed net.Listener cannot be reused.
 	for {
+		// Re-read config to pick up HTTPS toggle changes persisted by admin API.
+		loopCfg, _ := loadConfig()
+		httpsWanted := loopCfg.HTTPS
+
+		var tlsCfg *tls.Config
+		tlsAvailable = false
+		tlsCAPath = ""
+
+		if httpsWanted {
+			certPEM, keyPEM, caPath, fresh, certErr := ensureLocalCert()
+			if certErr != nil {
+				log.Printf("proxy: TLS cert unavailable (%v) — HTTPS disabled", certErr)
+			} else {
+				tlsCAPath = caPath
+				if fresh {
+					go func() { _ = installCATrust(caPath) }()
+				}
+				tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
+				if err != nil {
+					log.Printf("proxy: TLS key pair error (%v) — HTTPS disabled", err)
+				} else {
+					tlsCfg = &tls.Config{Certificates: []tls.Certificate{tlsCert}, MinVersion: tls.VersionTLS12}
+					tlsAvailable = true
+				}
+			}
+		}
+
 		log.Printf("proxy: listening on :%d (log=%t verbose=%t tls=%t)", adminPort, logEnabled.Load(), verboseEnabled.Load(), tlsAvailable)
 		adminServer = &http.Server{
 			Addr:              fmt.Sprintf(":%d", adminPort),

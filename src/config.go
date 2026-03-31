@@ -17,6 +17,7 @@ type AppConfig struct {
 	Verbose     bool
 	MCPRefresh  time.Duration
 	MCPFallback bool
+	HTTPS       bool
 }
 
 func defaultConfig() AppConfig {
@@ -136,11 +137,81 @@ func applyEnvVars(cfg *AppConfig) {
 		"VERBOSE":      os.Getenv("DEVPROXY_VERBOSE"),
 		"MCP_REFRESH":  os.Getenv("DEVPROXY_MCP_REFRESH"),
 		"MCP_FALLBACK": os.Getenv("DEVPROXY_MCP_FALLBACK"),
+		"HTTPS":        os.Getenv("DEVPROXY_HTTPS"),
 	} {
 		if val != "" {
 			_ = applyKeyValue(cfg, key, val)
 		}
 	}
+}
+
+// userConfigPath returns the user-level config file path (highest priority file path).
+func userConfigPath() (string, error) {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, "devstudio-proxy", "config.conf"), nil
+}
+
+// persistConfigKey writes or updates a KEY=VALUE pair in the user config file.
+// Creates the file and parent directory if they do not exist.
+func persistConfigKey(key, value string) error {
+	path, err := userConfigPath()
+	if err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+
+	// Read existing content (if any).
+	var lines []string
+	if data, err := os.ReadFile(path); err == nil {
+		lines = strings.Split(string(data), "\n")
+	}
+
+	// Replace existing key or append.
+	found := false
+	upper := strings.ToUpper(key)
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+		k, _, ok := strings.Cut(trimmed, "=")
+		if ok && strings.TrimSpace(strings.ToUpper(k)) == upper {
+			lines[i] = key + "=" + value
+			found = true
+			break
+		}
+	}
+	if !found {
+		// Append; ensure a trailing newline before adding.
+		if len(lines) > 0 && lines[len(lines)-1] == "" {
+			lines = append(lines[:len(lines)-1], key+"="+value, "")
+		} else {
+			lines = append(lines, key+"="+value)
+		}
+	}
+
+	content := strings.Join(lines, "\n")
+	// Atomic write: temp file + rename.
+	tmp, err := os.CreateTemp(filepath.Dir(path), ".config-*.tmp")
+	if err != nil {
+		return err
+	}
+	tmpName := tmp.Name()
+	if _, err := tmp.WriteString(content); err != nil {
+		tmp.Close()
+		os.Remove(tmpName)
+		return err
+	}
+	if err := tmp.Close(); err != nil {
+		os.Remove(tmpName)
+		return err
+	}
+	return os.Rename(tmpName, path)
 }
 
 // applyKeyValue sets a single key on cfg. Unknown keys are silently ignored
@@ -165,6 +236,8 @@ func applyKeyValue(cfg *AppConfig, key, val string) error {
 		cfg.MCPRefresh = d
 	case "MCP_FALLBACK":
 		cfg.MCPFallback = strings.ToLower(val) == "true" || val == "1"
+	case "HTTPS":
+		cfg.HTTPS = strings.ToLower(val) == "true" || val == "1"
 	// unknown keys intentionally ignored
 	}
 	return nil
