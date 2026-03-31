@@ -1,17 +1,17 @@
 class DevstudioProxy < Formula
   desc "Lightweight HTTP/HTTPS forward proxy with transparent TLS passthrough"
   homepage "https://github.com/devstudio-live/devstudio-proxy"
-  version "0.39.0"
+  version "0.40.0"
   license "MIT"
 
   on_macos do
     on_arm do
       url "https://github.com/devstudio-live/devstudio-proxy/releases/download/v#{version}/devproxy-darwin-arm64"
-      sha256 "13f74d1326114caad1cb9435faac048110fc273828603864f1a0af92bb6c85b5"
+      sha256 "8df9713e4d577e2ed06bb7a355725ff542d2443c89f2b5ec9bd748913db79722"
     end
     on_intel do
       url "https://github.com/devstudio-live/devstudio-proxy/releases/download/v#{version}/devproxy-darwin-amd64"
-      sha256 "08b899d1a193fbee76b104debb74f5e46ebf79da554e3f6adc6a943b51782c1d"
+      sha256 "da5d8f00cce8df047247151c071d42e94a59737f3a48b0f9b04fdd5eac085384"
     end
   end
 
@@ -19,19 +19,19 @@ class DevstudioProxy < Formula
     on_arm do
       if Hardware::CPU.is_64_bit?
         url "https://github.com/devstudio-live/devstudio-proxy/releases/download/v#{version}/devproxy-linux-arm64"
-        sha256 "2fd890c07fcd621e60a12dd0b49fd83eb398a984238b1b56837fdda7e629352a"
+        sha256 ""
       else
         url "https://github.com/devstudio-live/devstudio-proxy/releases/download/v#{version}/devproxy-linux-arm"
-        sha256 "2fd890c07fcd621e60a12dd0b49fd83eb398a984238b1b56837fdda7e629352a"
+        sha256 ""
       end
     end
     on_intel do
       if Hardware::CPU.is_64_bit?
         url "https://github.com/devstudio-live/devstudio-proxy/releases/download/v#{version}/devproxy-linux-amd64"
-        sha256 "5cdd6f7c57ffbbead508c9a691e282165d37b1a4354c7b6e7b69d61ccc011bfd"
+        sha256 ""
       else
         url "https://github.com/devstudio-live/devstudio-proxy/releases/download/v#{version}/devproxy-linux-386"
-        sha256 "2fa61531135d6974fbfd9c6ad0b56752cda194c070b4174bd7db9815335df2bb"
+        sha256 ""
       end
     end
   end
