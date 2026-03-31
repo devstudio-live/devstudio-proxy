@@ -19,7 +19,12 @@ PLATFORMS_ALL = \
 
 PLATFORMS = $(PLATFORMS_DARWIN)
 
-.PHONY: all full clean test checksums $(PLATFORMS_ALL)
+WAILS_DIR = ../wails
+WAILS_BIN = $(WAILS_DIR)/build/bin
+GOBIN     = $(shell go env GOPATH)/bin
+WAILS     = $(GOBIN)/wails
+
+.PHONY: all full clean test checksums wails-setup wails-mac wails-full $(PLATFORMS_ALL)
 
 all: $(PLATFORMS_DARWIN) checksums
 
@@ -40,3 +45,29 @@ test:
 
 clean:
 	rm -rf $(DIST)/
+
+# Install wails CLI if missing; re-run go mod tidy only when go.mod changes
+$(WAILS_DIR)/go.sum: $(WAILS_DIR)/go.mod
+	cd $(WAILS_DIR) && go mod tidy
+
+wails-setup: $(WAILS_DIR)/go.sum
+	@test -f $(WAILS) || go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+# macOS only: universal .app bundle + arch-split CLI binaries extracted via lipo
+wails-mac: wails-setup
+	cd $(WAILS_DIR) && $(WAILS) build -platform darwin/universal -clean
+	lipo $(WAILS_BIN)/devproxy.app/Contents/MacOS/devproxy \
+		-extract arm64  -output $(WAILS_BIN)/devproxy-darwin-arm64
+	lipo $(WAILS_BIN)/devproxy.app/Contents/MacOS/devproxy \
+		-extract x86_64 -output $(WAILS_BIN)/devproxy-darwin-amd64
+
+# All platforms: macOS (as above) + Windows + Linux
+wails-full: wails-mac
+	cd $(WAILS_DIR) && $(WAILS) build -platform windows/amd64
+	cp $(WAILS_BIN)/devproxy.exe $(WAILS_BIN)/devproxy-windows-amd64.exe
+	cd $(WAILS_DIR) && $(WAILS) build -platform windows/arm64
+	cp $(WAILS_BIN)/devproxy.exe $(WAILS_BIN)/devproxy-windows-arm64.exe
+	cd $(WAILS_DIR) && $(WAILS) build -platform linux/amd64
+	cp $(WAILS_BIN)/devproxy     $(WAILS_BIN)/devproxy-linux-amd64
+	cd $(WAILS_DIR) && $(WAILS) build -platform linux/arm64
+	cp $(WAILS_BIN)/devproxy     $(WAILS_BIN)/devproxy-linux-arm64
