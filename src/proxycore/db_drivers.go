@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strings"
 	"strconv"
 
+	_ "github.com/ClickHouse/clickhouse-go/v2"
 	_ "github.com/go-sql-driver/mysql"
 	_ "github.com/lib/pq"
 )
@@ -21,8 +23,10 @@ func driverNameFor(driver string) (string, error) {
 			return "", fmt.Errorf("sqlite driver not available — rebuild with -tags sqlite or use CGO_ENABLED=1")
 		}
 		return "sqlite", nil
+	case "clickhouse":
+		return "clickhouse", nil
 	default:
-		return "", fmt.Errorf("unsupported driver %q — supported: postgres, mysql, sqlite", driver)
+		return "", fmt.Errorf("unsupported driver %q — supported: postgres, mysql, sqlite, clickhouse", driver)
 	}
 }
 
@@ -37,6 +41,8 @@ func buildDSN(conn DBConnection) (string, error) {
 			return "", fmt.Errorf("sqlite driver not available — rebuild with -tags sqlite or use CGO_ENABLED=1")
 		}
 		return buildSQLiteDSN(conn), nil
+	case "clickhouse":
+		return buildClickHouseDSN(conn), nil
 	default:
 		return "", fmt.Errorf("unsupported driver %q", conn.Driver)
 	}
@@ -75,6 +81,19 @@ func buildSQLiteDSN(conn DBConnection) string {
 	return file
 }
 
+func buildClickHouseDSN(conn DBConnection) string {
+	port := conn.Port
+	if port == 0 {
+		port = 9000
+	}
+	dsn := fmt.Sprintf("clickhouse://%s:%s@%s:%d/%s",
+		conn.User, conn.Password, conn.Host, port, conn.Database)
+	if conn.SSL != "" && conn.SSL != "disable" {
+		dsn += "?secure=true"
+	}
+	return dsn
+}
+
 func listTables(ctx context.Context, db *sql.DB, conn DBConnection) ([]DBTable, error) {
 	switch conn.Driver {
 	case "postgres", "postgresql":
@@ -83,6 +102,8 @@ func listTables(ctx context.Context, db *sql.DB, conn DBConnection) ([]DBTable, 
 		return listTablesMySQL(ctx, db, conn.Database)
 	case "sqlite", "sqlite3":
 		return listTablesSQLite(ctx, db)
+	case "clickhouse":
+		return listTablesClickHouse(ctx, db)
 	default:
 		return nil, fmt.Errorf("unsupported driver %q", conn.Driver)
 	}
@@ -164,6 +185,33 @@ func listTablesSQLite(ctx context.Context, db *sql.DB) ([]DBTable, error) {
 	return tables, rows.Err()
 }
 
+func listTablesClickHouse(ctx context.Context, db *sql.DB) ([]DBTable, error) {
+	const q = `
+		SELECT database, name, engine
+		FROM system.tables
+		WHERE database NOT IN ('system','information_schema','INFORMATION_SCHEMA')
+		ORDER BY database, name`
+	rows, err := db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var tables []DBTable
+	for rows.Next() {
+		var schema, name, engine string
+		if err := rows.Scan(&schema, &name, &engine); err != nil {
+			return nil, err
+		}
+		tableType := "table"
+		if strings.Contains(engine, "View") {
+			tableType = "view"
+		}
+		tables = append(tables, DBTable{Name: name, Schema: schema, Type: tableType})
+	}
+	return tables, rows.Err()
+}
+
 func describeTable(ctx context.Context, db *sql.DB, conn DBConnection, table string) ([]DBColumn, error) {
 	switch conn.Driver {
 	case "postgres", "postgresql":
@@ -172,6 +220,8 @@ func describeTable(ctx context.Context, db *sql.DB, conn DBConnection, table str
 		return describeTableMySQL(ctx, db, table)
 	case "sqlite", "sqlite3":
 		return describeTableSQLite(ctx, db, table)
+	case "clickhouse":
+		return describeTableClickHouse(ctx, db, table)
 	default:
 		return nil, fmt.Errorf("unsupported driver %q", conn.Driver)
 	}
@@ -245,6 +295,29 @@ func describeTableSQLite(ctx context.Context, db *sql.DB, table string) ([]DBCol
 	return cols, rows.Err()
 }
 
+func describeTableClickHouse(ctx context.Context, db *sql.DB, table string) ([]DBColumn, error) {
+	const q = `
+		SELECT name, type
+		FROM system.columns
+		WHERE table = ?
+		ORDER BY position`
+	rows, err := db.QueryContext(ctx, q, table)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var cols []DBColumn
+	for rows.Next() {
+		var name, typ string
+		if err := rows.Scan(&name, &typ); err != nil {
+			return nil, err
+		}
+		cols = append(cols, DBColumn{Name: name, Type: typ, Nullable: strings.HasPrefix(typ, "Nullable(")})
+	}
+	return cols, rows.Err()
+}
+
 func listDatabases(ctx context.Context, db *sql.DB, conn DBConnection) ([]string, error) {
 	switch conn.Driver {
 	case "postgres", "postgresql":
@@ -260,6 +333,8 @@ func listDatabases(ctx context.Context, db *sql.DB, conn DBConnection) ([]string
 			file = ":memory:"
 		}
 		return []string{file}, nil
+	case "clickhouse":
+		return listDatabasesClickHouse(ctx, db)
 	default:
 		return nil, fmt.Errorf("unsupported driver %q", conn.Driver)
 	}
@@ -276,6 +351,15 @@ func listDatabasesPostgres(ctx context.Context, db *sql.DB) ([]string, error) {
 
 func listDatabasesMySQL(ctx context.Context, db *sql.DB) ([]string, error) {
 	rows, err := db.QueryContext(ctx, "SHOW DATABASES")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanStringColumn(rows)
+}
+
+func listDatabasesClickHouse(ctx context.Context, db *sql.DB) ([]string, error) {
+	rows, err := db.QueryContext(ctx, "SELECT name FROM system.databases ORDER BY name")
 	if err != nil {
 		return nil, err
 	}
