@@ -77,6 +77,12 @@ type Server struct {
 	contextCache     sync.Map
 	contextTotalSize atomic.Int64
 	contextCount     atomic.Int32
+
+	// HPROF parse jobs
+	hprofJobs sync.Map
+
+	// HPROF session cache (Phase 3)
+	hprofSessions *HprofSessionStore
 }
 
 // NewServer creates a Server with default ring buffers and wires the handler.
@@ -87,6 +93,7 @@ func NewServer(opts Options) *Server {
 		ServerStartTime:    time.Now(),
 		LogBuf:             NewLogRing(200),
 		EventBuf:           NewEventRing(100),
+		hprofSessions:      NewHprofSessionStore(),
 	}
 
 	// The Handler wraps the proxy router with logging middleware.
@@ -104,6 +111,8 @@ func (s *Server) Start(mcpRefresh time.Duration) {
 	go s.startElasticPoolReaper()
 	go s.startRedisPoolReaper()
 	go s.startContextReaper()
+	go s.startHprofJobReaper()
+	go s.startSessionReaper()
 	go s.startHealthTicker()
 }
 
