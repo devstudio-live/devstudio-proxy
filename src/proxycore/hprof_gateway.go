@@ -407,6 +407,8 @@ func (s *Server) hprofResult(w http.ResponseWriter, r *http.Request, path string
 		s.hprofClassLoaders(w, r, job.Result)
 	case "threads":
 		s.hprofThreads(w, r, job.Result)
+	case "topobjects":
+		s.hprofTopObjects(w, r, job.Result)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(map[string]string{"error": "unknown endpoint: " + endpoint})
@@ -1206,6 +1208,33 @@ func (s *Server) hprofThreads(w http.ResponseWriter, r *http.Request, res *Hprof
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"threads":    threads,
 		"totalCount": res.ThreadRetained.TotalCount,
+	})
+}
+
+// GET /hprof/result/{id}/topobjects?offset=0&limit=100
+func (s *Server) hprofTopObjects(w http.ResponseWriter, r *http.Request, res *HprofResult) {
+	q := r.URL.Query()
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	if limit <= 0 {
+		limit = 100
+	}
+	if limit > 5000 {
+		limit = 5000
+	}
+
+	total := len(res.TopObjects)
+	if offset > total {
+		offset = total
+	}
+	end := offset + limit
+	if end > total {
+		end = total
+	}
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"objects": res.TopObjects[offset:end],
+		"total":   total,
 	})
 }
 

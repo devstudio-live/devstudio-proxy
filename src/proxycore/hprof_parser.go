@@ -88,6 +88,9 @@ type HprofResult struct {
 	ClassLoaders   *ClassLoaderAnalysis        `json:"-"`
 	ThreadRetained *ThreadRetainedAnalysis     `json:"-"`
 
+	// Top objects by shallow size (for top objects endpoint)
+	TopObjects []TopObjectEntry `json:"-"`
+
 	// Internal — for cleanup
 	mmapData []byte
 }
@@ -109,6 +112,16 @@ func (r *HprofResult) TopClasses(n int) []HprofClassSummary {
 		n = len(sorted)
 	}
 	return sorted[:n]
+}
+
+// TopObjectEntry is a single large object for the top objects endpoint.
+type TopObjectEntry struct {
+	ObjectID    string `json:"objectId"`
+	ClassName   string `json:"className"`
+	ClassID     string `json:"classId"`
+	ShallowSize int64  `json:"shallowSize"`
+	Kind        string `json:"kind"`
+	ElemType    byte   `json:"elemType"`
 }
 
 // HprofClassSummary is a per-class aggregation (histogram row).
@@ -360,6 +373,7 @@ func ParseHprof(path string, cancel <-chan struct{}, progress ProgressCallback) 
 	result.ClassSummary = p.buildClassSummary()
 	result.GCRoots = p.buildGCRootGroups()
 	result.DominatorTree = p.buildDominatorTree()
+	result.TopObjects = p.buildTopObjects()
 	result.Insights = p.buildInsights(result)
 
 	// Phase 2: attach object graph and update class retained sizes
@@ -1080,6 +1094,31 @@ func (p *hprofParser) buildGCRootGroups() []HprofGCRootGroup {
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].Count > groups[j].Count })
 	return groups
+}
+
+func (p *hprofParser) buildTopObjects() []TopObjectEntry {
+	entries := make([]TopObjectEntry, 0, len(p.topObjects))
+	for _, o := range p.topObjects {
+		className := p.classes[o.classID]
+		if className == "" {
+			if o.kind == "prim-array" {
+				className = primArrayClassName(o.elemType)
+			} else if o.kind == "obj-array" {
+				className = "Object[]"
+			} else {
+				className = formatID(o.classID)
+			}
+		}
+		entries = append(entries, TopObjectEntry{
+			ObjectID:    formatID(o.objectID),
+			ClassName:   className,
+			ClassID:     formatID(o.classID),
+			ShallowSize: o.shallowSize,
+			Kind:        o.kind,
+			ElemType:    o.elemType,
+		})
+	}
+	return entries
 }
 
 func (p *hprofParser) buildDominatorTree() []HprofDomNode {
