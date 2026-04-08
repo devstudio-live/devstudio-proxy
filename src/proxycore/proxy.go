@@ -69,6 +69,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// K8s exec WebSocket endpoint (Phase 2) — must be before gateway dispatch
+	if r.URL.Path == "/k8s/exec" && r.URL.Host == "" {
+		h.s.handleK8sExec(w, r)
+		return
+	}
+
 	// DevStudio gateway — header-based routing
 	if r.Header.Get("X-DevStudio-Gateway-Route") != "" {
 		switch r.Header.Get("X-DevStudio-Gateway-Protocol") {

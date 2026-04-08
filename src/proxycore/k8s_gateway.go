@@ -29,6 +29,19 @@ type K8sRequest struct {
 	FieldSelector string `json:"fieldSelector,omitempty"`
 	YAML          string `json:"yaml,omitempty"`
 	Limit         int64  `json:"limit,omitempty"`
+	// Phase 2 — write operations
+	Replicas     *int32 `json:"replicas,omitempty"`
+	Uncordon     bool   `json:"uncordon,omitempty"`
+	Force        bool   `json:"force,omitempty"`
+	GracePeriod  *int64 `json:"gracePeriod,omitempty"`
+	Action       string `json:"action,omitempty"` // for exec: "resize", etc.
+	Command      []string `json:"command,omitempty"` // for exec
+	TTY          bool   `json:"tty,omitempty"`
+	Stdin        bool   `json:"stdin,omitempty"`
+	// Port-forward
+	PodPort      int    `json:"podPort,omitempty"`
+	LocalPort    int    `json:"localPort,omitempty"`
+	ForwardID    string `json:"forwardId,omitempty"`
 }
 
 // K8sResponse is the unified response body for all K8s gateway endpoints.
@@ -44,6 +57,9 @@ type K8sResponse struct {
 	DurationMs float64          `json:"durationMs"`
 	Version    string           `json:"version,omitempty"`
 	Resources  []K8sAPIResource `json:"resources,omitempty"`
+	// Phase 2 — write responses
+	Message string `json:"message,omitempty"`
+	Success bool   `json:"success,omitempty"`
 }
 
 // K8sContext describes a context entry from a kubeconfig file.
@@ -120,6 +136,25 @@ func (s *Server) handleK8sGateway(w http.ResponseWriter, r *http.Request) {
 		s.handleK8sTopPods(w, r, req)
 	case "top/nodes":
 		s.handleK8sTopNodes(w, r, req)
+	// Phase 2 — write operations
+	case "apply":
+		s.handleK8sApply(w, r, req)
+	case "delete":
+		s.handleK8sDelete(w, r, req)
+	case "scale":
+		s.handleK8sScale(w, r, req)
+	case "restart":
+		s.handleK8sRestart(w, r, req)
+	case "cordon":
+		s.handleK8sCordon(w, r, req)
+	case "drain":
+		s.handleK8sDrain(w, r, req)
+	case "portforward/start":
+		s.handleK8sPortForwardStart(w, r, req)
+	case "portforward/stop":
+		s.handleK8sPortForwardStop(w, r, req)
+	case "portforward/list":
+		s.handleK8sPortForwardList(w, r, req)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(K8sResponse{Error: "unknown k8s endpoint: " + path})

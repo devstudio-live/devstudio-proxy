@@ -83,6 +83,9 @@ type Server struct {
 	k8sPoolMu   sync.Mutex
 	k8sPoolSize int
 
+	// Kubernetes port-forward sessions (Phase 2)
+	k8sPortForwards sync.Map
+
 	// HPROF parse jobs
 	hprofJobs sync.Map
 
