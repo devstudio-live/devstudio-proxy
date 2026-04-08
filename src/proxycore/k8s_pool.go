@@ -25,9 +25,16 @@ type k8sPoolEntry struct {
 	lastUsed  time.Time
 }
 
-// k8sConnectionKey returns a deterministic hash for kubeconfig path + context.
+// k8sConnectionKey returns a deterministic hash for kubeconfig path + context +
+// file mtime/size. Including the file's modification time means that when the
+// kubeconfig is regenerated (e.g. after k3s restarts with new TLS certs), the
+// old pool entry is not reused — a fresh client with the new CA is created
+// automatically instead of failing with "certificate signed by unknown authority".
 func k8sConnectionKey(kubeconfig, context string) string {
 	raw := kubeconfig + "\x00" + context
+	if fi, err := os.Stat(kubeconfig); err == nil {
+		raw += "\x00" + fi.ModTime().UTC().String() + "\x00" + fmt.Sprint(fi.Size())
+	}
 	sum := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(sum[:])
 }
