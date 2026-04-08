@@ -155,6 +155,21 @@ func (s *Server) handleK8sGateway(w http.ResponseWriter, r *http.Request) {
 		s.handleK8sPortForwardStop(w, r, req)
 	case "portforward/list":
 		s.handleK8sPortForwardList(w, r, req)
+	// Phase 3 — advanced features
+	case "helm/releases":
+		s.handleK8sHelmReleases(w, r, req)
+	case "helm/release":
+		s.handleK8sHelmRelease(w, r, req)
+	case "helm/history":
+		s.handleK8sHelmHistory(w, r, req)
+	case "crds":
+		s.handleK8sCRDs(w, r, req)
+	case "crd/resources":
+		s.handleK8sCRDResources(w, r, req)
+	case "diff":
+		s.handleK8sDiff(w, r, req)
+	case "topology":
+		s.handleK8sTopology(w, r, req)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(K8sResponse{Error: "unknown k8s endpoint: " + path})
