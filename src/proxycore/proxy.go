@@ -90,6 +90,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case "hprof":
 			h.s.handleHprofGateway(w, r)
 			return
+		case "k8s":
+			h.s.handleK8sGateway(w, r)
+			return
 		default:
 			setCORS(w, r)
 			w.Header().Set("Content-Type", "application/json")

@@ -78,6 +78,11 @@ type Server struct {
 	contextTotalSize atomic.Int64
 	contextCount     atomic.Int32
 
+	// Kubernetes client pool
+	k8sPool     sync.Map
+	k8sPoolMu   sync.Mutex
+	k8sPoolSize int
+
 	// HPROF parse jobs
 	hprofJobs sync.Map
 
@@ -110,6 +115,7 @@ func (s *Server) Start(mcpRefresh time.Duration) {
 	go s.startMongoPoolReaper()
 	go s.startElasticPoolReaper()
 	go s.startRedisPoolReaper()
+	go s.startK8sPoolReaper()
 	go s.startContextReaper()
 	go s.startHprofJobReaper()
 	go s.startSessionReaper()
