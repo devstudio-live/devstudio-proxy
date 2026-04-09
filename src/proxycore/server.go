@@ -98,6 +98,14 @@ type Server struct {
 
 	// HPROF session cache (Phase 3)
 	hprofSessions *HprofSessionStore
+
+	// SSH connection pool
+	sshPool     sync.Map
+	sshPoolMu   sync.Mutex
+	sshPoolSize int
+
+	// SSH terminal sessions
+	sshSessions sync.Map
 }
 
 // NewServer creates a Server with default ring buffers and wires the handler.
@@ -130,6 +138,8 @@ func (s *Server) Start(mcpRefresh time.Duration) {
 	go s.startContextReaper()
 	go s.startHprofJobReaper()
 	go s.startSessionReaper()
+	go s.startSSHPoolReaper()
+	go s.startSSHSessionReaper()
 	go s.startHealthTicker()
 }
 

@@ -75,6 +75,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SSH terminal WebSocket endpoint — must be before gateway dispatch
+	if r.URL.Path == "/ssh/terminal" && r.URL.Host == "" {
+		h.s.handleSSHTerminal(w, r)
+		return
+	}
+
 	// DevStudio gateway — header-based routing
 	if r.Header.Get("X-DevStudio-Gateway-Route") != "" {
 		switch r.Header.Get("X-DevStudio-Gateway-Protocol") {
@@ -98,6 +104,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		case "k8s":
 			h.s.handleK8sGateway(w, r)
+			return
+		case "ssh":
+			h.s.handleSSHGateway(w, r)
 			return
 		default:
 			setCORS(w, r)

@@ -1,0 +1,110 @@
+package proxycore
+
+import (
+	"encoding/json"
+	"net/http"
+	"time"
+)
+
+// SSHRequest is the unified request body for all SSH gateway endpoints.
+type SSHRequest struct {
+	Connection SSHConnection `json:"connection"`
+}
+
+// SSHResponse is the unified response body for all SSH gateway endpoints.
+type SSHResponse struct {
+	Success    bool             `json:"success,omitempty"`
+	Message    string           `json:"message,omitempty"`
+	Error      string           `json:"error,omitempty"`
+	DurationMs float64          `json:"durationMs"`
+	Sessions   []map[string]any `json:"sessions,omitempty"`
+}
+
+func (s *Server) handleSSHGateway(w http.ResponseWriter, r *http.Request) {
+	r.Header.Del("X-DevStudio-Gateway-Route")
+	r.Header.Del("X-DevStudio-Gateway-Protocol")
+
+	setCORS(w, r)
+	w.Header().Set("Content-Type", "application/json")
+
+	if r.Method != http.MethodPost {
+		w.WriteHeader(http.StatusMethodNotAllowed)
+		json.NewEncoder(w).Encode(SSHResponse{Error: "only POST is accepted"}) //nolint:errcheck
+		return
+	}
+
+	var req SSHRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		w.WriteHeader(http.StatusBadRequest)
+		json.NewEncoder(w).Encode(SSHResponse{Error: "invalid request: " + err.Error()}) //nolint:errcheck
+		return
+	}
+
+	start := time.Now()
+
+	switch r.URL.Path {
+	case "/test":
+		s.handleSSHTest(w, req, start)
+	case "/connect":
+		s.handleSSHConnect(w, req, start)
+	case "/disconnect":
+		s.handleSSHDisconnect(w, req, start)
+	case "/sessions":
+		s.handleSSHSessions(w, start)
+	default:
+		w.WriteHeader(http.StatusNotFound)
+		json.NewEncoder(w).Encode(SSHResponse{Error: "unknown path: " + r.URL.Path}) //nolint:errcheck
+	}
+}
+
+func (s *Server) handleSSHTest(w http.ResponseWriter, req SSHRequest, start time.Time) {
+	client, err := s.getPooledSSHClient(req.Connection)
+	if err != nil {
+		json.NewEncoder(w).Encode(SSHResponse{Error: err.Error(), DurationMs: ms(start)}) //nolint:errcheck
+		return
+	}
+	sess, err := client.NewSession()
+	if err != nil {
+		json.NewEncoder(w).Encode(SSHResponse{Error: "session: " + err.Error(), DurationMs: ms(start)}) //nolint:errcheck
+		return
+	}
+	defer sess.Close()
+	if _, err := sess.Output("echo ok"); err != nil {
+		json.NewEncoder(w).Encode(SSHResponse{Error: "test failed: " + err.Error(), DurationMs: ms(start)}) //nolint:errcheck
+		return
+	}
+	json.NewEncoder(w).Encode(SSHResponse{Success: true, Message: "Connected successfully", DurationMs: ms(start)}) //nolint:errcheck
+}
+
+func (s *Server) handleSSHConnect(w http.ResponseWriter, req SSHRequest, start time.Time) {
+	if _, err := s.getPooledSSHClient(req.Connection); err != nil {
+		json.NewEncoder(w).Encode(SSHResponse{Error: err.Error(), DurationMs: ms(start)}) //nolint:errcheck
+		return
+	}
+	json.NewEncoder(w).Encode(SSHResponse{Success: true, Message: "Connected", DurationMs: ms(start)}) //nolint:errcheck
+}
+
+func (s *Server) handleSSHDisconnect(w http.ResponseWriter, req SSHRequest, start time.Time) {
+	s.closeSSHConnection(sshConnectionKey(req.Connection))
+	json.NewEncoder(w).Encode(SSHResponse{Success: true, Message: "Disconnected", DurationMs: ms(start)}) //nolint:errcheck
+}
+
+func (s *Server) handleSSHSessions(w http.ResponseWriter, start time.Time) {
+	var sessions []map[string]any
+	s.sshSessions.Range(func(_, v any) bool {
+		t := v.(*sshTerminalSession)
+		sessions = append(sessions, map[string]any{
+			"id":        t.ID,
+			"host":      t.Host,
+			"user":      t.User,
+			"createdAt": t.CreatedAt,
+			"cols":      t.Cols,
+			"rows":      t.Rows,
+		})
+		return true
+	})
+	if sessions == nil {
+		sessions = []map[string]any{}
+	}
+	json.NewEncoder(w).Encode(SSHResponse{Sessions: sessions, DurationMs: ms(start)}) //nolint:errcheck
+}
