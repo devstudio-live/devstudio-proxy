@@ -126,6 +126,13 @@ func (ss *HprofSessionStore) Reap() {
 	ss.sessions = kept
 }
 
+// Len returns the number of cached sessions.
+func (ss *HprofSessionStore) Len() int {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	return len(ss.sessions)
+}
+
 // startSessionReaper runs the reaper on a ticker.
 func (s *Server) startSessionReaper() {
 	ticker := time.NewTicker(sessionReapInterval)

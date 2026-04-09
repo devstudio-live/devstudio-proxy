@@ -6,8 +6,10 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // handleAdmin routes /admin/* requests to the appropriate admin handler.
@@ -29,6 +31,10 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		s.adminLogsJSON(w, r)
 	case r.URL.Path == "/admin/events" && r.Method == http.MethodGet:
 		s.adminEvents(w, r)
+	case r.URL.Path == "/admin/traffic" && r.Method == http.MethodGet:
+		s.adminTraffic(w, r)
+	case r.URL.Path == "/admin/internals" && r.Method == http.MethodGet:
+		s.adminInternals(w, r)
 	default:
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -76,9 +82,10 @@ func (s *Server) adminTrustCert(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) adminPostConfig(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Log     *bool `json:"log"`
-		Verbose *bool `json:"verbose"`
-		HTTPS   *bool `json:"https"`
+		Log              *bool `json:"log"`
+		Verbose          *bool `json:"verbose"`
+		HTTPS            *bool `json:"https"`
+		VerboseTTLSeconds *int `json:"verbose_ttl_seconds"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		w.Header().Set("Content-Type", "application/json")
@@ -94,6 +101,18 @@ func (s *Server) adminPostConfig(w http.ResponseWriter, r *http.Request) {
 		if *body.Verbose {
 			s.LogEnabled.Store(true)
 		}
+	}
+	if body.VerboseTTLSeconds != nil && *body.VerboseTTLSeconds > 0 && s.VerboseEnabled.Load() {
+		ttl := time.Duration(*body.VerboseTTLSeconds) * time.Second
+		s.verboseRevertMu.Lock()
+		if s.VerboseRevertTimer != nil {
+			s.VerboseRevertTimer.Stop()
+		}
+		s.VerboseRevertTimer = time.AfterFunc(ttl, func() {
+			s.VerboseEnabled.Store(false)
+			log.Printf("proxy: verbose mode auto-reverted after TTL")
+		})
+		s.verboseRevertMu.Unlock()
 	}
 	restartRequired := false
 	if body.HTTPS != nil {
@@ -249,4 +268,109 @@ func (s *Server) adminLogsJSON(w http.ResponseWriter, r *http.Request) {
 // isAdminPath returns true for /admin/* paths.
 func isAdminPath(path string) bool {
 	return strings.HasPrefix(path, "/admin/")
+}
+
+func (s *Server) adminTraffic(w http.ResponseWriter, r *http.Request) {
+	// JSON snapshot mode: ?format=json&since=ID
+	if r.URL.Query().Get("format") == "json" {
+		since, _ := strconv.ParseInt(r.URL.Query().Get("since"), 10, 64)
+		records := s.TrafficBuf.SnapshotSince(since)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]any{"records": records}) //nolint:errcheck
+		return
+	}
+
+	// SSE stream mode.
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	// Backfill buffered records.
+	for _, rec := range s.TrafficBuf.Snapshot() {
+		_, _ = w.Write(MarshalTrafficSSEFrame(rec))
+	}
+	flusher.Flush()
+
+	ch := make(chan TrafficRecord, 64)
+	s.TrafficBuf.Subscribe(ch)
+	defer s.TrafficBuf.Unsubscribe(ch)
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case rec, ok := <-ch:
+			if !ok {
+				return
+			}
+			_, _ = w.Write(MarshalTrafficSSEFrame(rec))
+			flusher.Flush()
+		}
+	}
+}
+
+func (s *Server) adminInternals(w http.ResponseWriter, r *http.Request) {
+	var ms runtime.MemStats
+	runtime.ReadMemStats(&ms)
+
+	uptime := time.Since(s.ServerStartTime).Seconds()
+
+	// Count active hprof jobs.
+	activeJobs := 0
+	s.hprofJobs.Range(func(_, _ any) bool {
+		activeJobs++
+		return true
+	})
+
+	s.mcpRuntime.mu.Lock()
+	mcpReady := s.mcpRuntime.ready
+	s.mcpRuntime.mu.Unlock()
+
+	logLen := s.LogBuf.Len()
+	evtLen := s.EventBuf.Len()
+	trafficLen := s.TrafficBuf.Len()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{ //nolint:errcheck
+		"uptime_seconds": uptime,
+		"goroutines":     runtime.NumGoroutine(),
+		"memory": map[string]any{
+			"alloc_mb":  float64(ms.Alloc) / (1024 * 1024),
+			"sys_mb":    float64(ms.Sys) / (1024 * 1024),
+			"gc_cycles": ms.NumGC,
+		},
+		"pools": map[string]any{
+			"sql":     map[string]any{"active": s.sqlPoolSize, "max": maxPoolSize},
+			"mongo":   map[string]any{"active": s.mongoPoolSize, "max": maxPoolSize},
+			"redis":   map[string]any{"active": s.redisPoolSize, "max": maxPoolSize},
+			"elastic": map[string]any{"active": s.elasticPoolSize, "max": maxPoolSize},
+			"k8s":     map[string]any{"active": s.k8sPoolSize, "max": maxK8sPoolSize},
+		},
+		"context_cache": map[string]any{
+			"entries":     s.contextCount.Load(),
+			"max_entries": maxContextEntries,
+			"total_bytes": s.contextTotalSize.Load(),
+			"max_bytes":   maxTotalSize,
+		},
+		"hprof": map[string]any{
+			"active_jobs":     activeJobs,
+			"cached_sessions": s.hprofSessions.Len(),
+		},
+		"mcp": map[string]any{
+			"ready":            mcpReady,
+			"fallback_enabled": s.MCPFallbackEnabled,
+		},
+		"buffers": map[string]any{
+			"log":     map[string]any{"capacity": 200, "current": logLen},
+			"event":   map[string]any{"capacity": 100, "current": evtLen},
+			"traffic": map[string]any{"capacity": 500, "current": trafficLen},
+		},
+	})
 }

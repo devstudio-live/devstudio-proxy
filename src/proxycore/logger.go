@@ -101,6 +101,13 @@ func (r *LogRing) Unsubscribe(ch chan string) {
 	r.mu.Unlock()
 }
 
+// Len returns the current number of entries in the buffer.
+func (r *LogRing) Len() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.lines)
+}
+
 // Lock exposes the mutex for snapshot-under-lock patterns.
 func (r *LogRing) Lock()   { r.mu.Lock() }
 func (r *LogRing) Unlock() { r.mu.Unlock() }
@@ -183,9 +190,29 @@ func (m *loggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	start := time.Now()
 	lrw := &LoggingResponseWriter{ResponseWriter: w, status: 200}
 	m.next.ServeHTTP(lrw, r)
+	duration := time.Since(start)
 
 	if enabled {
 		log.Printf("%s %s %s -> %d (%d bytes) in %s",
-			r.RemoteAddr, r.Method, r.URL, lrw.status, lrw.bytes, time.Since(start))
+			r.RemoteAddr, r.Method, r.URL, lrw.status, lrw.bytes, duration)
+	}
+
+	// Always capture traffic (independent of log/verbose toggle).
+	if m.s.TrafficBuf != nil && !isAdminPath(r.URL.Path) && r.URL.Path != "/health" {
+		rec := TrafficRecord{
+			Timestamp:  start.UnixMilli(),
+			Method:     r.Method,
+			Path:       r.URL.Path,
+			Protocol:   detectProtocol(r),
+			Status:     lrw.status,
+			DurationUS: duration.Microseconds(),
+			ReqSize:    r.ContentLength,
+			RespSize:   lrw.bytes,
+		}
+		if m.s.VerboseEnabled.Load() {
+			rec.ReqHeaders = flattenHeaders(r.Header)
+			rec.RespHeaders = flattenHeaders(lrw.Header())
+		}
+		m.s.TrafficBuf.Push(rec)
 	}
 }

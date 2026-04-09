@@ -84,6 +84,13 @@ func (r *EventRing) Unsubscribe(ch chan ProxyEvent) {
 	r.mu.Unlock()
 }
 
+// Len returns the current number of events in the buffer.
+func (r *EventRing) Len() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.events)
+}
+
 // Lock / Unlock expose the mutex for snapshot-under-lock patterns.
 func (r *EventRing) Lock()   { r.mu.Lock() }
 func (r *EventRing) Unlock() { r.mu.Unlock() }

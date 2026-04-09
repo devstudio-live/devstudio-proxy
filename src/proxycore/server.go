@@ -26,6 +26,13 @@ type Server struct {
 	// EventBuf is the ring buffer for proxy events with SSE subscriptions.
 	EventBuf *EventRing
 
+	// TrafficBuf is the ring buffer for request/response traffic records.
+	TrafficBuf *TrafficRing
+
+	// VerboseRevertTimer cancels an in-progress verbose TTL.
+	VerboseRevertTimer *time.Timer
+	verboseRevertMu    sync.Mutex
+
 	// LogEnabled / VerboseEnabled are toggled at runtime by /admin/config.
 	LogEnabled    atomic.Bool
 	VerboseEnabled atomic.Bool
@@ -101,6 +108,7 @@ func NewServer(opts Options) *Server {
 		ServerStartTime:    time.Now(),
 		LogBuf:             NewLogRing(200),
 		EventBuf:           NewEventRing(100),
+		TrafficBuf:         NewTrafficRing(500),
 		hprofSessions:      NewHprofSessionStore(),
 	}
 
