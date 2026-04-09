@@ -650,6 +650,25 @@ func (s *Server) handleK8sResources(w http.ResponseWriter, r *http.Request, req 
 			})
 		}
 
+	case "events":
+		eventList, err := cs.CoreV1().Events(ns).List(ctx, opts)
+		if err != nil {
+			json.NewEncoder(w).Encode(K8sResponse{Error: err.Error(), DurationMs: ms(t0)})
+			return
+		}
+		for _, e := range eventList.Items {
+			items = append(items, map[string]any{
+				"type":          e.Type,
+				"reason":        e.Reason,
+				"message":       e.Message,
+				"involvedObject": map[string]any{"kind": e.InvolvedObject.Kind, "name": e.InvolvedObject.Name},
+				"count":         e.Count,
+				"lastTimestamp": e.LastTimestamp.Time,
+				"source":        e.Source.Component,
+				"createdAt":     e.CreationTimestamp.Time,
+			})
+		}
+
 	default:
 		json.NewEncoder(w).Encode(K8sResponse{Error: "unsupported resource type: " + req.Resource, DurationMs: ms(t0)})
 		return
