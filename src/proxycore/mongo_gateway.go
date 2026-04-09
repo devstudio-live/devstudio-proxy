@@ -59,6 +59,12 @@ func (s *Server) handleMongoGateway(w http.ResponseWriter, r *http.Request) {
 		s.handleMongoAdmin(w, r, req)
 	case "aggregate":
 		s.handleMongoAggregate(w, r, req)
+	case "insert":
+		s.handleMongoInsert(w, r, req)
+	case "update":
+		s.handleMongoUpdate(w, r, req)
+	case "delete":
+		s.handleMongoDelete(w, r, req)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(DBResponse{Error: "unknown gateway endpoint: " + path})
@@ -513,4 +519,113 @@ func inferMongoFieldType(docs []bson.M, field string) string {
 		}
 	}
 	return "mixed"
+}
+
+// handleMongoInsert inserts a single document into a collection.
+// req.Table = collection name, req.Doc = JSON document to insert.
+func (s *Server) handleMongoInsert(w http.ResponseWriter, r *http.Request, req DBRequest) {
+	t0 := time.Now()
+	if req.Table == "" {
+		json.NewEncoder(w).Encode(DBResponse{Error: "table (collection) is required", Duration: ms(t0)})
+		return
+	}
+	client, err := s.getPooledMongoClient(req.Connection)
+	if err != nil {
+		json.NewEncoder(w).Encode(DBResponse{Error: err.Error(), Duration: ms(t0)})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), queryTimeout)
+	defer cancel()
+
+	docStr := strings.TrimSpace(req.Doc)
+	if docStr == "" {
+		docStr = "{}"
+	}
+	var doc bson.M
+	if err := bson.UnmarshalExtJSON([]byte(docStr), true, &doc); err != nil {
+		json.NewEncoder(w).Encode(DBResponse{Error: "invalid doc JSON: " + err.Error(), Duration: ms(t0)})
+		return
+	}
+
+	coll := client.Database(req.Connection.Database).Collection(req.Table)
+	res, err := coll.InsertOne(ctx, doc)
+	if err != nil {
+		json.NewEncoder(w).Encode(DBResponse{Error: err.Error(), Duration: ms(t0)})
+		return
+	}
+	_ = res
+	json.NewEncoder(w).Encode(DBResponse{Affected: 1, Duration: ms(t0)})
+}
+
+// handleMongoUpdate updates the first document matching the filter.
+// req.Table = collection, req.Filter = JSON filter, req.SQL = JSON update doc (e.g. {"$set":{...}}).
+func (s *Server) handleMongoUpdate(w http.ResponseWriter, r *http.Request, req DBRequest) {
+	t0 := time.Now()
+	if req.Table == "" {
+		json.NewEncoder(w).Encode(DBResponse{Error: "table (collection) is required", Duration: ms(t0)})
+		return
+	}
+	client, err := s.getPooledMongoClient(req.Connection)
+	if err != nil {
+		json.NewEncoder(w).Encode(DBResponse{Error: err.Error(), Duration: ms(t0)})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), queryTimeout)
+	defer cancel()
+
+	filter, err := parseMongoFilter(req.Filter)
+	if err != nil {
+		json.NewEncoder(w).Encode(DBResponse{Error: "invalid filter: " + err.Error(), Duration: ms(t0)})
+		return
+	}
+
+	updateStr := strings.TrimSpace(req.SQL)
+	if updateStr == "" {
+		json.NewEncoder(w).Encode(DBResponse{Error: "sql field must contain the update document", Duration: ms(t0)})
+		return
+	}
+	var update bson.M
+	if err := bson.UnmarshalExtJSON([]byte(updateStr), true, &update); err != nil {
+		json.NewEncoder(w).Encode(DBResponse{Error: "invalid update JSON: " + err.Error(), Duration: ms(t0)})
+		return
+	}
+
+	coll := client.Database(req.Connection.Database).Collection(req.Table)
+	res, err := coll.UpdateOne(ctx, filter, update)
+	if err != nil {
+		json.NewEncoder(w).Encode(DBResponse{Error: err.Error(), Duration: ms(t0)})
+		return
+	}
+	json.NewEncoder(w).Encode(DBResponse{Affected: res.ModifiedCount, Duration: ms(t0)})
+}
+
+// handleMongoDelete deletes the first document matching the filter.
+// req.Table = collection, req.Filter = JSON filter.
+func (s *Server) handleMongoDelete(w http.ResponseWriter, r *http.Request, req DBRequest) {
+	t0 := time.Now()
+	if req.Table == "" {
+		json.NewEncoder(w).Encode(DBResponse{Error: "table (collection) is required", Duration: ms(t0)})
+		return
+	}
+	client, err := s.getPooledMongoClient(req.Connection)
+	if err != nil {
+		json.NewEncoder(w).Encode(DBResponse{Error: err.Error(), Duration: ms(t0)})
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), queryTimeout)
+	defer cancel()
+
+	filter, err := parseMongoFilter(req.Filter)
+	if err != nil {
+		json.NewEncoder(w).Encode(DBResponse{Error: "invalid filter: " + err.Error(), Duration: ms(t0)})
+		return
+	}
+
+	coll := client.Database(req.Connection.Database).Collection(req.Table)
+	res, err := coll.DeleteOne(ctx, filter)
+	if err != nil {
+		json.NewEncoder(w).Encode(DBResponse{Error: err.Error(), Duration: ms(t0)})
+		return
+	}
+	json.NewEncoder(w).Encode(DBResponse{Affected: res.DeletedCount, Duration: ms(t0)})
 }

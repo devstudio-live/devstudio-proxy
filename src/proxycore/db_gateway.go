@@ -14,6 +14,8 @@ type DBRequest struct {
 	SQL        string       `json:"sql"`
 	Table      string       `json:"table"`
 	Limit      int          `json:"limit"`
+	Filter     string       `json:"filter"` // JSON filter doc (MongoDB write operations)
+	Doc        string       `json:"doc"`    // JSON document body (MongoDB insert)
 }
 
 // DBResponse is the unified response body for all DB gateway endpoints.
