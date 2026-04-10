@@ -29,7 +29,7 @@ type SSHResponse struct {
 	Sessions   *[]map[string]any `json:"sessions,omitempty"` // pointer so omitempty skips nil but not empty slice
 	Item       map[string]any    `json:"item,omitempty"`
 	Items      *[]map[string]any `json:"items,omitempty"` // pointer so omitempty skips nil but not empty slice
-	Files      []map[string]any  `json:"files,omitempty"` // Phase 4 — SFTP directory listing
+	Files      *[]map[string]any `json:"files,omitempty"` // pointer so omitempty skips nil but not empty slice
 }
 
 func (s *Server) handleSSHGateway(w http.ResponseWriter, r *http.Request) {

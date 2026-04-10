@@ -22,16 +22,29 @@ type SSHFileInfo struct {
 }
 
 // sftpClientFor opens an SFTP client on an already-pooled SSH connection.
+// If the pooled connection is stale (e.g. server rejected channel open),
+// it evicts the entry and retries once with a fresh connection.
 func (s *Server) sftpClientFor(conn SSHConnection) (*sftp.Client, error) {
 	sshClient, err := s.getPooledSSHClient(conn)
 	if err != nil {
 		return nil, fmt.Errorf("SSH: %w", err)
 	}
 	sc, err := sftp.NewClient(sshClient)
-	if err != nil {
-		return nil, fmt.Errorf("SFTP client: %w", err)
+	if err == nil {
+		return sc, nil
 	}
-	return sc, nil
+	// "open failed" means the server rejected the session channel — the pooled
+	// connection may be exhausted or stale.  Evict it and dial a fresh one.
+	s.closeSSHConnection(sshConnectionKey(conn))
+	sshClient2, err2 := s.getPooledSSHClient(conn)
+	if err2 != nil {
+		return nil, fmt.Errorf("SSH (retry): %w", err2)
+	}
+	sc2, err2 := sftp.NewClient(sshClient2)
+	if err2 != nil {
+		return nil, fmt.Errorf("SFTP client: %w", err2)
+	}
+	return sc2, nil
 }
 
 // ── Gateway handlers ──────────────────────────────────────────────────────────
@@ -76,7 +89,7 @@ func (s *Server) handleSFTPList(w http.ResponseWriter, req SSHRequest, start tim
 		Success:    true,
 		DurationMs: ms(start),
 		Item:       map[string]any{"path": absPath},
-		Files:      files,
+		Files:      &files,
 	})
 }
 
@@ -305,7 +318,9 @@ func (s *Server) handleSFTPRename(w http.ResponseWriter, req SSHRequest, start t
 	}
 	defer sc.Close()
 
-	if err := sc.Rename(req.SFTPPath, req.SFTPDest); err != nil {
+	// PosixRename atomically replaces the destination (like POSIX rename(2)),
+	// avoiding SSH_FX_FAILURE when the destination already exists.
+	if err := sc.PosixRename(req.SFTPPath, req.SFTPDest); err != nil {
 		json.NewEncoder(w).Encode(SSHResponse{Error: "rename: " + err.Error(), DurationMs: ms(start)}) //nolint:errcheck
 		return
 	}

@@ -234,26 +234,45 @@ func dialSSHWithJumps(conn SSHConnection, challengeFn ssh.KeyboardInteractiveCha
 	return ssh.NewClient(c, chans, reqs), jumps, nil
 }
 
+// isSSHClientAlive sends a lightweight keepalive global request.
+// Returns true if the connection is live, false if it is dead.
+func isSSHClientAlive(client *ssh.Client) bool {
+	// SendRequest on a dead transport returns an error immediately.
+	_, _, err := client.SendRequest("keepalive@devstudio", true, nil)
+	return err == nil
+}
+
 // getOrDialSSHClient returns a pooled client for conn or dials a new one.
 // challengeFn is forwarded to buildSSHConfig for keyboard-interactive auth.
+// Stale/dead pool entries are evicted and re-dialed transparently.
 func (s *Server) getOrDialSSHClient(conn SSHConnection, challengeFn ssh.KeyboardInteractiveChallenge) (*ssh.Client, error) {
 	key := sshConnectionKey(conn)
 
-	// Fast path
+	// Fast path: return pooled client only if the connection is still alive.
 	if v, ok := s.sshPool.Load(key); ok {
 		entry := v.(*sshPoolEntry)
-		entry.lastUsed = time.Now()
-		return entry.client, nil
+		if isSSHClientAlive(entry.client) {
+			entry.lastUsed = time.Now()
+			return entry.client, nil
+		}
+		// Dead — evict under the pool lock below.
 	}
 
 	s.sshPoolMu.Lock()
 	defer s.sshPoolMu.Unlock()
 
-	// Double-check after lock
+	// After acquiring the lock, evict any dead entry and re-check for a live one.
 	if v, ok := s.sshPool.Load(key); ok {
 		entry := v.(*sshPoolEntry)
-		entry.lastUsed = time.Now()
-		return entry.client, nil
+		if isSSHClientAlive(entry.client) {
+			entry.lastUsed = time.Now()
+			return entry.client, nil
+		}
+		// Still dead — evict it so we can dial a fresh connection.
+		entry.client.Close()
+		closeSSHChain(entry.jumps)
+		s.sshPool.Delete(key)
+		s.sshPoolSize--
 	}
 
 	if s.sshPoolSize >= maxSSHPoolSize {
