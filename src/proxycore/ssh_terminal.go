@@ -27,7 +27,9 @@ type sshTerminalSession struct {
 // handleSSHTerminal upgrades the connection to WebSocket and bridges to an SSH PTY.
 // Routed by path (/ssh/terminal) before gateway dispatch.
 //
-// Query parameters: host, port, user, authMethod, password, privateKey, passphrase, cols, rows
+// Query parameters: host, port, user, authMethod, password, privateKey, passphrase,
+//
+//	jumpHosts (JSON array), kiAnswers (JSON array), cols, rows
 func (s *Server) handleSSHTerminal(w http.ResponseWriter, r *http.Request) {
 	setCORS(w, r)
 
@@ -42,6 +44,13 @@ func (s *Server) handleSSHTerminal(w http.ResponseWriter, r *http.Request) {
 	}
 	if p, err := strconv.Atoi(q.Get("port")); err == nil && p > 0 {
 		conn.Port = p
+	}
+	// Phase 5 — jump hosts & keyboard-interactive answers from URL params
+	if jh := q.Get("jumpHosts"); jh != "" {
+		_ = json.Unmarshal([]byte(jh), &conn.JumpHosts)
+	}
+	if ki := q.Get("kiAnswers"); ki != "" {
+		_ = json.Unmarshal([]byte(ki), &conn.KIAnswers)
 	}
 
 	cols, rows := 80, 24
@@ -61,34 +70,103 @@ func (s *Server) handleSSHTerminal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// ── Keyboard-interactive: upgrade WebSocket first to relay challenge prompts ─
+
+	if conn.AuthMethod == "keyboard-interactive" {
+		key := sshConnectionKey(conn)
+		if _, pooled := s.sshPool.Load(key); !pooled {
+			// Not yet in pool — upgrade WS first so we can exchange challenge frames
+			wsConn, err := wsUpgrader.Upgrade(w, r, nil)
+			if err != nil {
+				return // Upgrade already wrote HTTP error
+			}
+			var wsMu sync.Mutex
+
+			challengeFn := func(name, instruction string, questions []string, echos []bool) ([]string, error) {
+				wsMu.Lock()
+				msg, _ := json.Marshal(map[string]any{
+					"type":        "ki-challenge",
+					"name":        name,
+					"instruction": instruction,
+					"questions":   questions,
+					"echos":       echos,
+				})
+				wsConn.WriteMessage(websocket.TextMessage, msg) //nolint:errcheck
+				wsMu.Unlock()
+
+				_, data, err := wsConn.ReadMessage()
+				if err != nil {
+					return nil, err
+				}
+				var resp struct {
+					Type    string   `json:"type"`
+					Answers []string `json:"answers"`
+				}
+				if json.Unmarshal(data, &resp) == nil && len(resp.Answers) > 0 {
+					return resp.Answers, nil
+				}
+				return make([]string, len(questions)), nil
+			}
+
+			sshClient, err := s.getOrDialSSHClient(conn, challengeFn)
+			if err != nil {
+				wsMu.Lock()
+				errMsg, _ := json.Marshal(map[string]string{"type": "error", "error": err.Error()})
+				wsConn.WriteMessage(websocket.TextMessage, errMsg) //nolint:errcheck
+				wsMu.Unlock()
+				wsConn.Close()
+				return
+			}
+
+			s.runTerminalSession(wsConn, &wsMu, sshClient, conn, cols, rows)
+			return
+		}
+	}
+
+	// ── Normal flow (all auth methods except unestablished keyboard-interactive) ─
+
 	sshClient, err := s.getPooledSSHClient(conn)
 	if err != nil {
 		http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusBadGateway)
 		return
 	}
 
+	wsConn, err := wsUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return // Upgrade already wrote HTTP error
+	}
+	var wsMu sync.Mutex
+	s.runTerminalSession(wsConn, &wsMu, sshClient, conn, cols, rows)
+}
+
+// runTerminalSession wires an established SSH client + WebSocket into a PTY session.
+func (s *Server) runTerminalSession(wsConn *websocket.Conn, wsMu *sync.Mutex, sshClient *ssh.Client, conn SSHConnection, cols, rows int) {
 	sess, err := sshClient.NewSession()
 	if err != nil {
-		http.Error(w, `{"error":"create session: `+err.Error()+`"}`, http.StatusInternalServerError)
+		wsMu.Lock()
+		errMsg, _ := json.Marshal(map[string]string{"type": "error", "error": "create session: " + err.Error()})
+		wsConn.WriteMessage(websocket.TextMessage, errMsg) //nolint:errcheck
+		wsMu.Unlock()
+		wsConn.Close()
 		return
 	}
 
 	stdin, err := sess.StdinPipe()
 	if err != nil {
 		sess.Close()
-		http.Error(w, `{"error":"stdin pipe: `+err.Error()+`"}`, http.StatusInternalServerError)
+		wsConn.Close()
 		return
 	}
 	stdout, err := sess.StdoutPipe()
 	if err != nil {
 		sess.Close()
-		http.Error(w, `{"error":"stdout pipe: `+err.Error()+`"}`, http.StatusInternalServerError)
+		wsConn.Close()
 		return
 	}
 	stderr, err := sess.StderrPipe()
 	if err != nil {
 		sess.Close()
-		http.Error(w, `{"error":"stderr pipe: `+err.Error()+`"}`, http.StatusInternalServerError)
+		wsConn.Close()
 		return
 	}
 
@@ -99,19 +177,13 @@ func (s *Server) handleSSHTerminal(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := sess.RequestPty("xterm-256color", rows, cols, modes); err != nil {
 		sess.Close()
-		http.Error(w, `{"error":"request pty: `+err.Error()+`"}`, http.StatusInternalServerError)
+		wsConn.Close()
 		return
 	}
 	if err := sess.Shell(); err != nil {
 		sess.Close()
-		http.Error(w, `{"error":"start shell: `+err.Error()+`"}`, http.StatusInternalServerError)
+		wsConn.Close()
 		return
-	}
-
-	wsConn, err := wsUpgrader.Upgrade(w, r, nil)
-	if err != nil {
-		sess.Close()
-		return // Upgrade already wrote HTTP error
 	}
 
 	sessionID := uuid.New().String()
@@ -132,8 +204,6 @@ func (s *Server) handleSSHTerminal(w http.ResponseWriter, r *http.Request) {
 		sess.Close()
 		wsConn.Close()
 	}()
-
-	var wsMu sync.Mutex
 
 	// WebSocket → SSH stdin (also handles resize control frames)
 	go func() {
@@ -195,10 +265,9 @@ func (s *Server) handleSSHTerminal(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// Block until SSH session ends (stdin EOF or remote exit)
+	// Block until SSH session ends
 	_ = sess.Wait()
 
-	// Notify client that session has ended
 	wsMu.Lock()
 	msg, _ := json.Marshal(map[string]string{"type": "exit"})
 	wsConn.WriteMessage(websocket.TextMessage, msg) //nolint:errcheck
