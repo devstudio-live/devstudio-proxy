@@ -14,6 +14,10 @@ type SSHRequest struct {
 	BindAddr   string `json:"bindAddr,omitempty"`
 	RemoteAddr string `json:"remoteAddr,omitempty"`
 	TunnelID   string `json:"tunnelId,omitempty"`
+	// Phase 4 — SFTP operations
+	SFTPPath    string `json:"sftpPath,omitempty"`
+	SFTPDest    string `json:"sftpDest,omitempty"`    // rename destination
+	SFTPContent string `json:"sftpContent,omitempty"` // base64 file content for small uploads
 }
 
 // SSHResponse is the unified response body for all SSH gateway endpoints.
@@ -25,6 +29,7 @@ type SSHResponse struct {
 	Sessions   []map[string]any `json:"sessions,omitempty"`
 	Item       map[string]any   `json:"item,omitempty"`
 	Items      []map[string]any `json:"items,omitempty"`
+	Files      []map[string]any `json:"files,omitempty"` // Phase 4 — SFTP directory listing
 }
 
 func (s *Server) handleSSHGateway(w http.ResponseWriter, r *http.Request) {
@@ -64,6 +69,23 @@ func (s *Server) handleSSHGateway(w http.ResponseWriter, r *http.Request) {
 		s.handleSSHTunnelStop(w, req, start)
 	case "/tunnel/list":
 		s.handleSSHTunnelList(w, start)
+	// Phase 4 — SFTP
+	case "/sftp/list":
+		s.handleSFTPList(w, req, start)
+	case "/sftp/stat":
+		s.handleSFTPStat(w, req, start)
+	case "/sftp/read":
+		s.handleSFTPRead(w, req, start)
+	case "/sftp/download":
+		s.handleSFTPDownload(w, r, start)
+	case "/sftp/write":
+		s.handleSFTPWrite(w, r, req, start)
+	case "/sftp/mkdir":
+		s.handleSFTPMkdir(w, req, start)
+	case "/sftp/delete":
+		s.handleSFTPDelete(w, req, start)
+	case "/sftp/rename":
+		s.handleSFTPRename(w, req, start)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(SSHResponse{Error: "unknown path: " + r.URL.Path}) //nolint:errcheck
