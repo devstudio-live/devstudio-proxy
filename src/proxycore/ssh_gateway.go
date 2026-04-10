@@ -9,6 +9,11 @@ import (
 // SSHRequest is the unified request body for all SSH gateway endpoints.
 type SSHRequest struct {
 	Connection SSHConnection `json:"connection"`
+	// Phase 3 — tunnel operations
+	TunnelType string `json:"tunnelType,omitempty"` // local | remote | dynamic
+	BindAddr   string `json:"bindAddr,omitempty"`
+	RemoteAddr string `json:"remoteAddr,omitempty"`
+	TunnelID   string `json:"tunnelId,omitempty"`
 }
 
 // SSHResponse is the unified response body for all SSH gateway endpoints.
@@ -18,6 +23,8 @@ type SSHResponse struct {
 	Error      string           `json:"error,omitempty"`
 	DurationMs float64          `json:"durationMs"`
 	Sessions   []map[string]any `json:"sessions,omitempty"`
+	Item       map[string]any   `json:"item,omitempty"`
+	Items      []map[string]any `json:"items,omitempty"`
 }
 
 func (s *Server) handleSSHGateway(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +58,12 @@ func (s *Server) handleSSHGateway(w http.ResponseWriter, r *http.Request) {
 		s.handleSSHDisconnect(w, req, start)
 	case "/sessions":
 		s.handleSSHSessions(w, start)
+	case "/tunnel/start":
+		s.handleSSHTunnelStart(w, req, start)
+	case "/tunnel/stop":
+		s.handleSSHTunnelStop(w, req, start)
+	case "/tunnel/list":
+		s.handleSSHTunnelList(w, start)
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(SSHResponse{Error: "unknown path: " + r.URL.Path}) //nolint:errcheck

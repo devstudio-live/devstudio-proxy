@@ -106,6 +106,9 @@ type Server struct {
 
 	// SSH terminal sessions
 	sshSessions sync.Map
+
+	// SSH tunnels (Phase 3)
+	sshTunnels sync.Map
 }
 
 // NewServer creates a Server with default ring buffers and wires the handler.
@@ -140,6 +143,7 @@ func (s *Server) Start(mcpRefresh time.Duration) {
 	go s.startSessionReaper()
 	go s.startSSHPoolReaper()
 	go s.startSSHSessionReaper()
+	go s.startSSHTunnelReaper()
 	go s.startHealthTicker()
 }
 
