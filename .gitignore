@@ -3,5 +3,6 @@ src/proxy
 src/dist/
 src/.env
 wails/build/
+wails/proxy-wails
 .claude
 devstudio-proxy.code-workspace
