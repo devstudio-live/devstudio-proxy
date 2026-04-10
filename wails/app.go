@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"time"
 
 	"devstudio/proxy/proxycore"
@@ -18,8 +19,11 @@ import (
 const maxProxyResponseSize = 5 << 20 // 5 MB
 
 type App struct {
-	ctx   context.Context
-	proxy *proxycore.Server
+	ctx           context.Context
+	proxy         *proxycore.Server
+	sshSessions   sync.Map // bridge sessionID → *sshBridgeSession
+	sftpDownloads sync.Map // bridge sessionID → *sftpDownloadState
+	sftpUploads   sync.Map // bridge sessionID → *sftpUploadState
 }
 
 func NewApp() *App {
@@ -131,6 +135,20 @@ func (a *App) DBGateway(protocol string, endpoint string, body string) string {
 	a.proxy.Handler.ServeHTTP(rec, req)
 	return rec.Body.String()
 }
+
+// SSHGateway dispatches SSH control-plane requests (test / connect / disconnect
+// / sessions / tunnel/*) through the in-process proxy handler, matching the
+// HTTP path + gateway headers the browser build uses.
+func (a *App) SSHGateway(endpoint string, body string) string {
+	req := httptest.NewRequest(http.MethodPost, "/"+endpoint, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-DevStudio-Gateway-Route", "true")
+	req.Header.Set("X-DevStudio-Gateway-Protocol", "ssh")
+	rec := httptest.NewRecorder()
+	a.proxy.Handler.ServeHTTP(rec, req)
+	return rec.Body.String()
+}
+
 
 // ProxyResponse is the structured return value for ProxyRequest.
 type ProxyResponse struct {
