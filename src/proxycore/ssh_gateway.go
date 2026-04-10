@@ -26,10 +26,10 @@ type SSHResponse struct {
 	Message    string           `json:"message,omitempty"`
 	Error      string           `json:"error,omitempty"`
 	DurationMs float64          `json:"durationMs"`
-	Sessions   []map[string]any `json:"sessions,omitempty"`
-	Item       map[string]any   `json:"item,omitempty"`
-	Items      []map[string]any `json:"items,omitempty"`
-	Files      []map[string]any `json:"files,omitempty"` // Phase 4 — SFTP directory listing
+	Sessions   *[]map[string]any `json:"sessions,omitempty"` // pointer so omitempty skips nil but not empty slice
+	Item       map[string]any    `json:"item,omitempty"`
+	Items      *[]map[string]any `json:"items,omitempty"` // pointer so omitempty skips nil but not empty slice
+	Files      []map[string]any  `json:"files,omitempty"` // Phase 4 — SFTP directory listing
 }
 
 func (s *Server) handleSSHGateway(w http.ResponseWriter, r *http.Request) {
@@ -141,5 +141,5 @@ func (s *Server) handleSSHSessions(w http.ResponseWriter, start time.Time) {
 	if sessions == nil {
 		sessions = []map[string]any{}
 	}
-	json.NewEncoder(w).Encode(SSHResponse{Sessions: sessions, DurationMs: ms(start)}) //nolint:errcheck
+	json.NewEncoder(w).Encode(SSHResponse{Sessions: &sessions, DurationMs: ms(start)}) //nolint:errcheck
 }

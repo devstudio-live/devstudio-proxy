@@ -132,7 +132,7 @@ func (s *Server) handleSSHTunnelList(w http.ResponseWriter, start time.Time) {
 	if items == nil {
 		items = []map[string]any{}
 	}
-	json.NewEncoder(w).Encode(SSHResponse{Items: items, DurationMs: ms(start)}) //nolint:errcheck
+	json.NewEncoder(w).Encode(SSHResponse{Items: &items, DurationMs: ms(start)}) //nolint:errcheck
 }
 
 // ── Tunnel implementations ────────────────────────────────────────────────────
