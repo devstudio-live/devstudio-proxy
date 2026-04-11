@@ -6,6 +6,10 @@ export function DBGateway(arg1, arg2, arg3) {
   return window['go']['main']['App']['DBGateway'](arg1, arg2, arg3);
 }
 
+export function FSGateway(arg1, arg2) {
+  return window['go']['main']['App']['FSGateway'](arg1, arg2);
+}
+
 export function GetConfig() {
   return window['go']['main']['App']['GetConfig']();
 }
@@ -26,6 +30,14 @@ export function HealthCheck() {
   return window['go']['main']['App']['HealthCheck']();
 }
 
+export function HprofAnalyzeStream(arg1, arg2) {
+  return window['go']['main']['App']['HprofAnalyzeStream'](arg1, arg2);
+}
+
+export function HprofGateway(arg1, arg2, arg3) {
+  return window['go']['main']['App']['HprofGateway'](arg1, arg2, arg3);
+}
+
 export function LoadContext(arg1) {
   return window['go']['main']['App']['LoadContext'](arg1);
 }
@@ -40,6 +52,54 @@ export function ProxyRequest(arg1, arg2, arg3, arg4) {
 
 export function Restart() {
   return window['go']['main']['App']['Restart']();
+}
+
+export function SFTPDownloadCancel(arg1) {
+  return window['go']['main']['App']['SFTPDownloadCancel'](arg1);
+}
+
+export function SFTPDownloadStart(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SFTPDownloadStart'](arg1, arg2, arg3);
+}
+
+export function SFTPUploadCancel(arg1) {
+  return window['go']['main']['App']['SFTPUploadCancel'](arg1);
+}
+
+export function SFTPUploadChunk(arg1, arg2) {
+  return window['go']['main']['App']['SFTPUploadChunk'](arg1, arg2);
+}
+
+export function SFTPUploadFinish(arg1) {
+  return window['go']['main']['App']['SFTPUploadFinish'](arg1);
+}
+
+export function SFTPUploadStart(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SFTPUploadStart'](arg1, arg2, arg3);
+}
+
+export function SSHCloseTerminal(arg1) {
+  return window['go']['main']['App']['SSHCloseTerminal'](arg1);
+}
+
+export function SSHGateway(arg1, arg2) {
+  return window['go']['main']['App']['SSHGateway'](arg1, arg2);
+}
+
+export function SSHOpenTerminal(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SSHOpenTerminal'](arg1, arg2, arg3);
+}
+
+export function SSHResize(arg1, arg2, arg3) {
+  return window['go']['main']['App']['SSHResize'](arg1, arg2, arg3);
+}
+
+export function SSHStdin(arg1, arg2) {
+  return window['go']['main']['App']['SSHStdin'](arg1, arg2);
+}
+
+export function SSHSubmitKIResponse(arg1, arg2) {
+  return window['go']['main']['App']['SSHSubmitKIResponse'](arg1, arg2);
 }
 
 export function StoreContext(arg1) {

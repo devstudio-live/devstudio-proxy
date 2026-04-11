@@ -13,6 +13,7 @@ import (
 
 	"devstudio/proxy/proxycore"
 
+	"github.com/google/uuid"
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
 
@@ -147,6 +148,92 @@ func (a *App) SSHGateway(endpoint string, body string) string {
 	rec := httptest.NewRecorder()
 	a.proxy.Handler.ServeHTTP(rec, req)
 	return rec.Body.String()
+}
+
+// FSGateway dispatches filesystem gateway requests (list / read / write /
+// stat / mkdir / delete / rename) through the in-process proxy handler.
+func (a *App) FSGateway(endpoint string, body string) string {
+	req := httptest.NewRequest(http.MethodPost, "/"+endpoint, strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-DevStudio-Gateway-Route", "true")
+	req.Header.Set("X-DevStudio-Gateway-Protocol", "fs")
+	rec := httptest.NewRecorder()
+	a.proxy.Handler.ServeHTTP(rec, req)
+	return rec.Body.String()
+}
+
+// HprofGateway dispatches non-streaming hprof endpoints (hprof/result/...,
+// hprof/query, hprof/report, hprof/status/..., hprof/cancel/...) through the
+// in-process proxy handler. The streaming hprof/analyze endpoint is handled
+// separately by HprofAnalyzeStream.
+func (a *App) HprofGateway(method string, endpoint string, body string) string {
+	if method == "" {
+		method = http.MethodGet
+	}
+	var bodyReader io.Reader
+	if body != "" {
+		bodyReader = strings.NewReader(body)
+	}
+	req := httptest.NewRequest(method, "/"+endpoint, bodyReader)
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("X-DevStudio-Gateway-Route", "true")
+	req.Header.Set("X-DevStudio-Gateway-Protocol", "hprof")
+	rec := httptest.NewRecorder()
+	a.proxy.Handler.ServeHTTP(rec, req)
+	return rec.Body.String()
+}
+
+// hprofStreamWriter is an http.ResponseWriter + http.Flusher that emits each
+// Write() as a Wails event tagged by streamId. Used so the SSE-streaming
+// hprof/analyze endpoint can be consumed by the frontend over Wails IPC
+// without opening any TCP listener.
+type hprofStreamWriter struct {
+	ctx      context.Context
+	streamId string
+	header   http.Header
+	status   int
+}
+
+func (w *hprofStreamWriter) Header() http.Header {
+	if w.header == nil {
+		w.header = make(http.Header)
+	}
+	return w.header
+}
+
+func (w *hprofStreamWriter) WriteHeader(status int) {
+	w.status = status
+}
+
+func (w *hprofStreamWriter) Write(data []byte) (int, error) {
+	runtime.EventsEmit(w.ctx, "hprof-stream-"+w.streamId, string(data))
+	return len(data), nil
+}
+
+func (w *hprofStreamWriter) Flush() {}
+
+// HprofAnalyzeStream starts an hprof analyze job in a goroutine. SSE frames
+// produced by the gateway are emitted as Wails events on the channel
+// "hprof-stream-{streamId}", terminated by "hprof-stream-end-{streamId}".
+// The caller is expected to generate streamId and subscribe to both events
+// BEFORE invoking this method, otherwise early frames may be lost.
+func (a *App) HprofAnalyzeStream(streamId string, path string) string {
+	if streamId == "" {
+		streamId = uuid.New().String()
+	}
+	go func() {
+		body, _ := json.Marshal(map[string]string{"path": path})
+		req := httptest.NewRequest(http.MethodPost, "/hprof/analyze", strings.NewReader(string(body)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("X-DevStudio-Gateway-Route", "true")
+		req.Header.Set("X-DevStudio-Gateway-Protocol", "hprof")
+		w := &hprofStreamWriter{ctx: a.ctx, streamId: streamId, status: 200}
+		a.proxy.Handler.ServeHTTP(w, req)
+		runtime.EventsEmit(a.ctx, "hprof-stream-end-"+streamId, w.status)
+	}()
+	return streamId
 }
 
 

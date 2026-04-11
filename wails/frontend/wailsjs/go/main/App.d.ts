@@ -4,6 +4,8 @@ import {main} from '../models';
 
 export function DBGateway(arg1:string,arg2:string,arg3:string):Promise<string>;
 
+export function FSGateway(arg1:string,arg2:string):Promise<string>;
+
 export function GetConfig():Promise<string>;
 
 export function GetEventSnapshot():Promise<string>;
@@ -14,6 +16,10 @@ export function GetVersion():Promise<string>;
 
 export function HealthCheck():Promise<Record<string, any>>;
 
+export function HprofAnalyzeStream(arg1:string,arg2:string):Promise<string>;
+
+export function HprofGateway(arg1:string,arg2:string,arg3:string):Promise<string>;
+
 export function LoadContext(arg1:string):Promise<string>;
 
 export function MCPGateway(arg1:string):Promise<string>;
@@ -21,6 +27,30 @@ export function MCPGateway(arg1:string):Promise<string>;
 export function ProxyRequest(arg1:string,arg2:string,arg3:Record<string, string>,arg4:string):Promise<main.ProxyResponse>;
 
 export function Restart():Promise<string>;
+
+export function SFTPDownloadCancel(arg1:string):Promise<string>;
+
+export function SFTPDownloadStart(arg1:string,arg2:string,arg3:string):Promise<string>;
+
+export function SFTPUploadCancel(arg1:string):Promise<string>;
+
+export function SFTPUploadChunk(arg1:string,arg2:string):Promise<string>;
+
+export function SFTPUploadFinish(arg1:string):Promise<string>;
+
+export function SFTPUploadStart(arg1:string,arg2:string,arg3:string):Promise<string>;
+
+export function SSHCloseTerminal(arg1:string):Promise<string>;
+
+export function SSHGateway(arg1:string,arg2:string):Promise<string>;
+
+export function SSHOpenTerminal(arg1:string,arg2:number,arg3:number):Promise<string>;
+
+export function SSHResize(arg1:string,arg2:number,arg3:number):Promise<string>;
+
+export function SSHStdin(arg1:string,arg2:string):Promise<string>;
+
+export function SSHSubmitKIResponse(arg1:string,arg2:string):Promise<string>;
 
 export function StoreContext(arg1:string):Promise<string>;
 
