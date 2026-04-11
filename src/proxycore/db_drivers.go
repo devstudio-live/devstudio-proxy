@@ -86,9 +86,23 @@ func buildClickHouseDSN(conn DBConnection) string {
 	if port == 0 {
 		port = 9000
 	}
+	useTLS := conn.SSL != "" && conn.SSL != "disable"
+	if port == 8123 || port == 8443 {
+		scheme := "http"
+		if useTLS {
+			scheme = "https"
+		}
+		dsn := fmt.Sprintf("%s://%s:%s@%s:%d/%s",
+			scheme, conn.User, conn.Password, conn.Host, port, conn.Database)
+		if useTLS {
+			dsn += "?secure=true"
+		}
+		return dsn
+	}
+
 	dsn := fmt.Sprintf("clickhouse://%s:%s@%s:%d/%s",
 		conn.User, conn.Password, conn.Host, port, conn.Database)
-	if conn.SSL != "" && conn.SSL != "disable" {
+	if useTLS {
 		dsn += "?secure=true"
 	}
 	return dsn

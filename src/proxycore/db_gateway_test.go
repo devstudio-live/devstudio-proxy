@@ -171,6 +171,48 @@ func TestBuildMySQLDSN_DefaultPort(t *testing.T) {
 	}
 }
 
+func TestBuildClickHouseDSN_DefaultPortAndNoTLS(t *testing.T) {
+	conn := DBConnection{Driver: "clickhouse", Host: "ch.example.com", Database: "default"}
+	dsn := buildClickHouseDSN(conn)
+	if !strings.Contains(dsn, "clickhouse://") {
+		t.Errorf("unexpected ClickHouse DSN: %q", dsn)
+	}
+	if !strings.Contains(dsn, "ch.example.com:9000") {
+		t.Errorf("DSN should default to port 9000, got %q", dsn)
+	}
+	if strings.Contains(dsn, "secure=true") {
+		t.Errorf("DSN should not enable TLS by default, got %q", dsn)
+	}
+}
+
+func TestBuildClickHouseDSN_TLSRequire(t *testing.T) {
+	conn := DBConnection{
+		Driver: "clickhouse", Host: "devtest.alumni-jy1mn.altinity.cloud", Port: 8443,
+		Database: "default", User: "devstudio", Password: "devstudiodevstudio", SSL: "require",
+	}
+	dsn := buildClickHouseDSN(conn)
+	if !strings.Contains(dsn, "https://devstudio:devstudiodevstudio@devtest.alumni-jy1mn.altinity.cloud:8443/default") {
+		t.Errorf("DSN missing host:port, got %q", dsn)
+	}
+	if !strings.Contains(dsn, "secure=true") {
+		t.Errorf("DSN should enable TLS when ssl=require, got %q", dsn)
+	}
+}
+
+func TestBuildClickHouseDSN_HTTPPortWithoutTLS(t *testing.T) {
+	conn := DBConnection{
+		Driver: "clickhouse", Host: "devtest.alumni-jy1mn.altinity.cloud", Port: 8123,
+		Database: "default", User: "devstudio", Password: "devstudiodevstudio", SSL: "disable",
+	}
+	dsn := buildClickHouseDSN(conn)
+	if !strings.HasPrefix(dsn, "http://") {
+		t.Errorf("DSN should use HTTP protocol on port 8123, got %q", dsn)
+	}
+	if strings.Contains(dsn, "secure=true") {
+		t.Errorf("DSN should not force secure=true when SSL is disabled, got %q", dsn)
+	}
+}
+
 func TestBuildSQLiteDSN_File(t *testing.T) {
 	conn := DBConnection{Driver: "sqlite", File: "/tmp/test.db"}
 	dsn := buildSQLiteDSN(conn)
