@@ -148,7 +148,8 @@ func (s *Server) handleDBQuery(w http.ResponseWriter, r *http.Request, req DBReq
 	}
 
 	sql := req.SQL
-	if !strings.Contains(upperSQL, "LIMIT") {
+	isLimitable := strings.HasPrefix(upperSQL, "SELECT") || strings.HasPrefix(upperSQL, "WITH")
+	if isLimitable && !strings.Contains(upperSQL, "LIMIT") {
 		sql = addLimit(sql, req.Limit, req.Connection.Driver)
 	}
 

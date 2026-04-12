@@ -4,8 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"strings"
+	"net/url"
 	"strconv"
+	"strings"
 
 	_ "github.com/ClickHouse/clickhouse-go/v2"
 	_ "github.com/go-sql-driver/mysql"
@@ -92,20 +93,48 @@ func buildClickHouseDSN(conn DBConnection) string {
 		if useTLS {
 			scheme = "https"
 		}
-		dsn := fmt.Sprintf("%s://%s:%s@%s:%d/%s",
-			scheme, conn.User, conn.Password, conn.Host, port, conn.Database)
-		if useTLS {
-			dsn += "?secure=true"
+		u := &url.URL{
+			Scheme: scheme,
+			Host:   fmt.Sprintf("%s:%d", conn.Host, port),
+			Path:   "/" + conn.Database,
 		}
-		return dsn
+		if conn.User != "" || conn.Password != "" {
+			u.User = url.UserPassword(conn.User, conn.Password)
+		}
+		q := u.Query()
+		// For HTTP(S) protocol, clickhouse-go reliably consumes credentials via
+		// query params. Keep userinfo too for compatibility.
+		if conn.User != "" {
+			q.Set("username", conn.User)
+		}
+		if conn.Password != "" {
+			q.Set("password", conn.Password)
+		}
+		if useTLS {
+			q.Set("secure", "true")
+		}
+		if len(q) > 0 {
+			u.RawQuery = q.Encode()
+		}
+		return u.String()
 	}
 
-	dsn := fmt.Sprintf("clickhouse://%s:%s@%s:%d/%s",
-		conn.User, conn.Password, conn.Host, port, conn.Database)
-	if useTLS {
-		dsn += "?secure=true"
+	u := &url.URL{
+		Scheme: "clickhouse",
+		Host:   fmt.Sprintf("%s:%d", conn.Host, port),
+		Path:   "/" + conn.Database,
 	}
-	return dsn
+	if conn.User != "" || conn.Password != "" {
+		u.User = url.UserPassword(conn.User, conn.Password)
+	}
+	q := u.Query()
+	if useTLS {
+		q.Set("secure", "true")
+	}
+	if len(q) > 0 {
+		u.RawQuery = q.Encode()
+	}
+	return u.String()
 }
 
 func listTables(ctx context.Context, db *sql.DB, conn DBConnection) ([]DBTable, error) {
@@ -217,13 +246,23 @@ func listTablesClickHouse(ctx context.Context, db *sql.DB) ([]DBTable, error) {
 		if err := rows.Scan(&schema, &name, &engine); err != nil {
 			return nil, err
 		}
-		tableType := "table"
-		if strings.Contains(engine, "View") {
-			tableType = "view"
-		}
+		tableType := classifyClickHouseObjectType(engine)
 		tables = append(tables, DBTable{Name: name, Schema: schema, Type: tableType})
 	}
 	return tables, rows.Err()
+}
+
+func classifyClickHouseObjectType(engine string) string {
+	switch {
+	case strings.EqualFold(engine, "RefreshableMaterializedView"):
+		return "rmv"
+	case strings.EqualFold(engine, "MaterializedView"):
+		return "mv"
+	case strings.Contains(strings.ToLower(engine), "view"):
+		return "view"
+	default:
+		return "table"
+	}
 }
 
 func describeTable(ctx context.Context, db *sql.DB, conn DBConnection, table string) ([]DBColumn, error) {

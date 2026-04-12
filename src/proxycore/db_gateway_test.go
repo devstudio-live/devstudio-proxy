@@ -194,6 +194,9 @@ func TestBuildClickHouseDSN_TLSRequire(t *testing.T) {
 	if !strings.Contains(dsn, "https://devstudio:devstudiodevstudio@devtest.alumni-jy1mn.altinity.cloud:8443/default") {
 		t.Errorf("DSN missing host:port, got %q", dsn)
 	}
+	if !strings.Contains(dsn, "username=devstudio") || !strings.Contains(dsn, "password=devstudiodevstudio") {
+		t.Errorf("DSN should include explicit HTTP auth params, got %q", dsn)
+	}
 	if !strings.Contains(dsn, "secure=true") {
 		t.Errorf("DSN should enable TLS when ssl=require, got %q", dsn)
 	}
@@ -210,6 +213,24 @@ func TestBuildClickHouseDSN_HTTPPortWithoutTLS(t *testing.T) {
 	}
 	if strings.Contains(dsn, "secure=true") {
 		t.Errorf("DSN should not force secure=true when SSL is disabled, got %q", dsn)
+	}
+}
+
+func TestClassifyClickHouseObjectType(t *testing.T) {
+	cases := []struct {
+		engine string
+		want   string
+	}{
+		{engine: "MergeTree", want: "table"},
+		{engine: "View", want: "view"},
+		{engine: "MaterializedView", want: "mv"},
+		{engine: "RefreshableMaterializedView", want: "rmv"},
+	}
+	for _, tc := range cases {
+		got := classifyClickHouseObjectType(tc.engine)
+		if got != tc.want {
+			t.Errorf("classifyClickHouseObjectType(%q) = %q, want %q", tc.engine, got, tc.want)
+		}
 	}
 }
 
