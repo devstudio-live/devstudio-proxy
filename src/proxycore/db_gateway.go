@@ -3,6 +3,7 @@ package proxycore
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -55,6 +56,14 @@ func (s *Server) handleDBGateway(w http.ResponseWriter, r *http.Request) {
 
 	setCORS(w, r)
 	w.Header().Set("Content-Type", "application/json")
+
+	// Recover from any driver-level panic and return it as a JSON error so the
+	// client always gets structured feedback instead of a bare HTTP 500.
+	defer func() {
+		if p := recover(); p != nil {
+			json.NewEncoder(w).Encode(DBResponse{Error: fmt.Sprintf("internal error: %v", p)})
+		}
+	}()
 
 	if r.Method != http.MethodPost {
 		w.WriteHeader(http.StatusMethodNotAllowed)
