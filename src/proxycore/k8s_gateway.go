@@ -42,6 +42,9 @@ type K8sRequest struct {
 	PodPort      int    `json:"podPort,omitempty"`
 	LocalPort    int    `json:"localPort,omitempty"`
 	ForwardID    string `json:"forwardId,omitempty"`
+	// SSH connection mode
+	ConnectionMode string         `json:"connectionMode,omitempty"` // "kubeconfig" | "ssh"
+	SSHConnection  *SSHConnection `json:"sshConnection,omitempty"`
 }
 
 // K8sResponse is the unified response body for all K8s gateway endpoints.
@@ -106,6 +109,12 @@ func (s *Server) handleK8sGateway(w http.ResponseWriter, r *http.Request) {
 
 	if req.Limit <= 0 {
 		req.Limit = 500
+	}
+
+	// Route SSH connection mode to kubectl-over-SSH handlers
+	if req.ConnectionMode == "ssh" {
+		s.handleK8sSSHGateway(w, r, req)
+		return
 	}
 
 	path := strings.TrimPrefix(r.URL.Path, "/")

@@ -75,6 +75,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// K8s SSH exec WebSocket endpoint — kubectl exec over SSH
+	if r.URL.Path == "/k8s/ssh-exec" && r.URL.Host == "" {
+		h.s.handleK8sSSHExec(w, r)
+		return
+	}
+
 	// SSH terminal WebSocket endpoint — must be before gateway dispatch
 	if r.URL.Path == "/ssh/terminal" && r.URL.Host == "" {
 		h.s.handleSSHTerminal(w, r)

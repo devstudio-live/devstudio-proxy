@@ -93,6 +93,9 @@ type Server struct {
 	// Kubernetes port-forward sessions (Phase 2)
 	k8sPortForwards sync.Map
 
+	// Kubernetes SSH port-forward sessions
+	k8sSSHPortForwards sync.Map
+
 	// HPROF parse jobs
 	hprofJobs sync.Map
 
