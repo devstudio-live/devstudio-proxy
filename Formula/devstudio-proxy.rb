@@ -1,17 +1,17 @@
 class DevstudioProxy < Formula
   desc "Lightweight HTTP/HTTPS forward proxy with transparent TLS passthrough"
   homepage "https://github.com/devstudio-live/devstudio-proxy"
-  version "0.60.0"
+  version "0.61.0"
   license "MIT"
 
   on_macos do
     on_arm do
       url "https://github.com/devstudio-live/devstudio-proxy/releases/download/v#{version}/devproxy-darwin-arm64"
-      sha256 "492936b9593284489b164b03e37bffe2a624015a652f66c08b5034173e46bdeb"
+      sha256 "4d98e020d8b59f7fda8ebd3c1794c0cd7b3e16b921657446fc33ec840ea5d3b3"
     end
     on_intel do
       url "https://github.com/devstudio-live/devstudio-proxy/releases/download/v#{version}/devproxy-darwin-amd64"
-      sha256 "989203b6ebf4600b7277d582f14cc353eed59195d461d7163903a0d43b1de024"
+      sha256 "a1c018da097fa0c56ae62f691d7494853c56e0ba98befed31ef80d4694b5678a"
     end
   end
 
