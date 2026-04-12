@@ -67,7 +67,7 @@ func buildMySQLDSN(conn DBConnection) string {
 	if port == 0 {
 		port = 3306
 	}
-	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&multiStatements=true",
+	return fmt.Sprintf("%s:%s@tcp(%s:%d)/%s?parseTime=true&multiStatements=true&allowNativePasswords=true&allowFallbackToPlaintext=true",
 		conn.User, conn.Password, conn.Host, port, conn.Database)
 }
 

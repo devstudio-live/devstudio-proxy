@@ -136,6 +136,16 @@ func (s *Server) handleDBQuery(w http.ResponseWriter, r *http.Request, req DBReq
 		strings.HasPrefix(upperSQL, "DESCRIBE") ||
 		strings.HasPrefix(upperSQL, "PRAGMA")
 
+	// ClickHouse mutations (ALTER TABLE ... UPDATE/DELETE) must go through QueryContext —
+	// the clickhouse-go v2 ExecContext path has known issues with mutation responses.
+	// We treat them as queries that return an empty result set.
+	isClickHouseMutation := req.Connection.Driver == "clickhouse" &&
+		strings.HasPrefix(upperSQL, "ALTER TABLE") &&
+		(strings.Contains(upperSQL, " UPDATE ") || strings.Contains(upperSQL, " DELETE "))
+	if isClickHouseMutation {
+		isQuery = true
+	}
+
 	if !isQuery {
 		result, err := db.ExecContext(ctx, req.SQL)
 		if err != nil {
