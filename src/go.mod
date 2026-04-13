@@ -2,8 +2,6 @@ module devstudio/proxy
 
 go 1.25.0
 
-toolchain go1.25.0
-
 require (
 	github.com/ClickHouse/clickhouse-go/v2 v2.44.0
 	github.com/dop251/goja v0.0.0-20260311135729-065cd970411c
@@ -12,6 +10,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/lib/pq v1.10.9
+	github.com/pkg/sftp v1.13.10
 	github.com/redis/go-redis/v9 v9.18.0
 	go.mongodb.org/mongo-driver v1.17.1
 	golang.org/x/crypto v0.48.0
@@ -61,7 +60,6 @@ require (
 	github.com/ncruces/go-strftime v0.1.9 // indirect
 	github.com/paulmach/orb v0.12.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.25 // indirect
-	github.com/pkg/sftp v1.13.10 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/segmentio/asm v1.2.1 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
