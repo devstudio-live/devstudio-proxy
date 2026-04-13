@@ -1,10 +1,12 @@
 package proxycore
 
 import (
+	"bytes"
 	"context"
 	"encoding/csv"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"sort"
 	"strings"
@@ -46,6 +48,32 @@ func (s *Server) handleKafkaGateway(w http.ResponseWriter, r *http.Request) {
 		s.kafkaHandleTopics(w, req)
 	case "topic/detail":
 		s.kafkaHandleTopicDetail(w, req)
+	case "topic/create":
+		s.kafkaHandleTopicCreate(w, req)
+	case "topic/delete":
+		s.kafkaHandleTopicDelete(w, req)
+	case "topic/config/update":
+		s.kafkaHandleTopicConfigUpdate(w, req)
+	case "topic/partitions/add":
+		s.kafkaHandleTopicPartitionsAdd(w, req)
+	case "topic/purge":
+		s.kafkaHandleTopicPurge(w, req)
+	case "topic/clone":
+		s.kafkaHandleTopicClone(w, req)
+	case "schemas":
+		s.kafkaHandleSchemas(w, req)
+	case "schema/detail":
+		s.kafkaHandleSchemaDetail(w, req)
+	case "schema/version":
+		s.kafkaHandleSchemaVersion(w, req)
+	case "schema/create":
+		s.kafkaHandleSchemaCreate(w, req)
+	case "schema/delete":
+		s.kafkaHandleSchemaDelete(w, req)
+	case "schema/compatibility":
+		s.kafkaHandleSchemaCompatibility(w, req)
+	case "schema/config":
+		s.kafkaHandleSchemaConfig(w, req)
 	case "messages":
 		s.kafkaHandleMessages(w, req)
 	case "messages/produce":
@@ -1418,5 +1446,758 @@ func (s *Server) kafkaTimestampToOffsets(ctx context.Context, entry *kafkaPoolEn
 		}
 	}
 	return result, nil
+}
+
+// ── Topic management endpoints ─────────────────────────────────────────────
+
+// kafkaHandleTopicCreate creates a new topic.
+func (s *Server) kafkaHandleTopicCreate(w http.ResponseWriter, req KafkaRequest) {
+	start := time.Now()
+
+	if req.Topic == "" {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "topic name is required"})
+		return
+	}
+
+	entry, err := s.getPooledKafkaClient(req.Connection)
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+	defer cancel()
+
+	parts := req.Partitions
+	if parts <= 0 {
+		parts = 1
+	}
+	reps := req.Replicas
+	if reps <= 0 {
+		reps = 1
+	}
+
+	configs := make([]kafka.ConfigEntry, 0, len(req.Config))
+	for k, v := range req.Config {
+		configs = append(configs, kafka.ConfigEntry{ConfigName: k, ConfigValue: v})
+	}
+
+	client := entry.kafkaClient()
+	resp, err := client.CreateTopics(ctx, &kafka.CreateTopicsRequest{
+		Addr: client.Addr,
+		Topics: []kafka.TopicConfig{{
+			Topic:             req.Topic,
+			NumPartitions:     parts,
+			ReplicationFactor: reps,
+			ConfigEntries:     configs,
+		}},
+	})
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "create topic failed: " + err.Error()})
+		return
+	}
+	if tErr, ok := resp.Errors[req.Topic]; ok && tErr != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "create topic error: " + tErr.Error()})
+		return
+	}
+
+	dur := float64(time.Since(start).Milliseconds())
+	json.NewEncoder(w).Encode(KafkaResponse{
+		DurationMs: dur,
+		Data: map[string]any{
+			"topic":      req.Topic,
+			"partitions": parts,
+			"replicas":   reps,
+		},
+	})
+}
+
+// kafkaHandleTopicDelete deletes a topic.
+func (s *Server) kafkaHandleTopicDelete(w http.ResponseWriter, req KafkaRequest) {
+	start := time.Now()
+
+	if req.Topic == "" {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "topic name is required"})
+		return
+	}
+
+	entry, err := s.getPooledKafkaClient(req.Connection)
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+	defer cancel()
+
+	client := entry.kafkaClient()
+	resp, err := client.DeleteTopics(ctx, &kafka.DeleteTopicsRequest{
+		Addr:   client.Addr,
+		Topics: []string{req.Topic},
+	})
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "delete topic failed: " + err.Error()})
+		return
+	}
+	if tErr, ok := resp.Errors[req.Topic]; ok && tErr != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "delete topic error: " + tErr.Error()})
+		return
+	}
+
+	dur := float64(time.Since(start).Milliseconds())
+	json.NewEncoder(w).Encode(KafkaResponse{
+		DurationMs: dur,
+		Data:       map[string]any{"deleted": req.Topic},
+	})
+}
+
+// kafkaHandleTopicConfigUpdate alters topic configuration entries.
+func (s *Server) kafkaHandleTopicConfigUpdate(w http.ResponseWriter, req KafkaRequest) {
+	start := time.Now()
+
+	if req.Topic == "" {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "topic name is required"})
+		return
+	}
+	if len(req.Config) == 0 {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "config entries are required"})
+		return
+	}
+
+	entry, err := s.getPooledKafkaClient(req.Connection)
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+	defer cancel()
+
+	entries := make([]kafka.AlterConfigRequestConfig, 0, len(req.Config))
+	for k, v := range req.Config {
+		entries = append(entries, kafka.AlterConfigRequestConfig{Name: k, Value: v})
+	}
+
+	client := entry.kafkaClient()
+	resp, err := client.AlterConfigs(ctx, &kafka.AlterConfigsRequest{
+		Addr: client.Addr,
+		Resources: []kafka.AlterConfigRequestResource{{
+			ResourceType: kafka.ResourceTypeTopic,
+			ResourceName: req.Topic,
+			Configs:      entries,
+		}},
+	})
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "alter config failed: " + err.Error()})
+		return
+	}
+	for res, rErr := range resp.Errors {
+		if rErr != nil && res.Name == req.Topic {
+			json.NewEncoder(w).Encode(KafkaResponse{Error: "alter config error: " + rErr.Error()})
+			return
+		}
+	}
+
+	dur := float64(time.Since(start).Milliseconds())
+	json.NewEncoder(w).Encode(KafkaResponse{
+		DurationMs: dur,
+		Data: map[string]any{
+			"topic":   req.Topic,
+			"updated": len(req.Config),
+		},
+	})
+}
+
+// kafkaHandleTopicPartitionsAdd increases the partition count of a topic.
+func (s *Server) kafkaHandleTopicPartitionsAdd(w http.ResponseWriter, req KafkaRequest) {
+	start := time.Now()
+
+	if req.Topic == "" {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "topic name is required"})
+		return
+	}
+	if req.Partitions <= 0 {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "partitions must be a positive count (new total)"})
+		return
+	}
+
+	entry, err := s.getPooledKafkaClient(req.Connection)
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+	defer cancel()
+
+	client := entry.kafkaClient()
+	resp, err := client.CreatePartitions(ctx, &kafka.CreatePartitionsRequest{
+		Addr: client.Addr,
+		Topics: []kafka.TopicPartitionsConfig{{
+			Name:  req.Topic,
+			Count: int32(req.Partitions),
+		}},
+	})
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "add partitions failed: " + err.Error()})
+		return
+	}
+	if tErr, ok := resp.Errors[req.Topic]; ok && tErr != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "add partitions error: " + tErr.Error()})
+		return
+	}
+
+	dur := float64(time.Since(start).Milliseconds())
+	json.NewEncoder(w).Encode(KafkaResponse{
+		DurationMs: dur,
+		Data: map[string]any{
+			"topic":      req.Topic,
+			"partitions": req.Partitions,
+		},
+	})
+}
+
+// kafkaHandleTopicPurge purges all messages from a topic by deleting and
+// recreating it with the same partition count and configuration. kafka-go
+// does not expose the DeleteRecords admin API, so we take this approach as a
+// functional equivalent.
+func (s *Server) kafkaHandleTopicPurge(w http.ResponseWriter, req KafkaRequest) {
+	start := time.Now()
+
+	if req.Topic == "" {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "topic name is required"})
+		return
+	}
+
+	entry, err := s.getPooledKafkaClient(req.Connection)
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+	defer cancel()
+
+	client := entry.kafkaClient()
+
+	numPartitions, replicationFactor, configs, err := s.kafkaCaptureTopicShape(ctx, client, req.Topic)
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
+		return
+	}
+
+	delResp, err := client.DeleteTopics(ctx, &kafka.DeleteTopicsRequest{
+		Addr:   client.Addr,
+		Topics: []string{req.Topic},
+	})
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "purge delete failed: " + err.Error()})
+		return
+	}
+	if tErr, ok := delResp.Errors[req.Topic]; ok && tErr != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "purge delete error: " + tErr.Error()})
+		return
+	}
+
+	// Wait briefly for the broker to reflect the deletion before recreating.
+	if err := s.kafkaWaitForTopicAbsent(ctx, client, req.Topic); err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
+		return
+	}
+
+	createResp, err := client.CreateTopics(ctx, &kafka.CreateTopicsRequest{
+		Addr: client.Addr,
+		Topics: []kafka.TopicConfig{{
+			Topic:             req.Topic,
+			NumPartitions:     numPartitions,
+			ReplicationFactor: replicationFactor,
+			ConfigEntries:     configs,
+		}},
+	})
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "purge recreate failed: " + err.Error()})
+		return
+	}
+	if tErr, ok := createResp.Errors[req.Topic]; ok && tErr != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "purge recreate error: " + tErr.Error()})
+		return
+	}
+
+	dur := float64(time.Since(start).Milliseconds())
+	json.NewEncoder(w).Encode(KafkaResponse{
+		DurationMs: dur,
+		Data: map[string]any{
+			"topic":      req.Topic,
+			"partitions": numPartitions,
+			"replicas":   replicationFactor,
+		},
+	})
+}
+
+// kafkaHandleTopicClone creates a new topic with the same partition count and
+// configuration as an existing topic. Messages are not copied.
+func (s *Server) kafkaHandleTopicClone(w http.ResponseWriter, req KafkaRequest) {
+	start := time.Now()
+
+	source := req.Topic
+	// Reuse DiffTopic2 as the target topic name.
+	target := req.DiffTopic2
+	if source == "" || target == "" {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "source topic and target topic (diffTopic2) are required"})
+		return
+	}
+
+	entry, err := s.getPooledKafkaClient(req.Connection)
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
+	defer cancel()
+
+	client := entry.kafkaClient()
+
+	numPartitions, replicationFactor, configs, err := s.kafkaCaptureTopicShape(ctx, client, source)
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
+		return
+	}
+
+	resp, err := client.CreateTopics(ctx, &kafka.CreateTopicsRequest{
+		Addr: client.Addr,
+		Topics: []kafka.TopicConfig{{
+			Topic:             target,
+			NumPartitions:     numPartitions,
+			ReplicationFactor: replicationFactor,
+			ConfigEntries:     configs,
+		}},
+	})
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "clone create failed: " + err.Error()})
+		return
+	}
+	if tErr, ok := resp.Errors[target]; ok && tErr != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "clone create error: " + tErr.Error()})
+		return
+	}
+
+	dur := float64(time.Since(start).Milliseconds())
+	json.NewEncoder(w).Encode(KafkaResponse{
+		DurationMs: dur,
+		Data: map[string]any{
+			"source":     source,
+			"target":     target,
+			"partitions": numPartitions,
+			"replicas":   replicationFactor,
+		},
+	})
+}
+
+// kafkaCaptureTopicShape returns the partition count, replication factor, and
+// non-default, non-read-only config entries for a topic so it can be
+// recreated or cloned.
+func (s *Server) kafkaCaptureTopicShape(ctx context.Context, client *kafka.Client, topic string) (int, int, []kafka.ConfigEntry, error) {
+	meta, err := client.Metadata(ctx, &kafka.MetadataRequest{
+		Addr:   client.Addr,
+		Topics: []string{topic},
+	})
+	if err != nil {
+		return 0, 0, nil, fmt.Errorf("metadata fetch failed: %w", err)
+	}
+	if len(meta.Topics) == 0 || meta.Topics[0].Error != nil {
+		return 0, 0, nil, fmt.Errorf("topic not found: %s", topic)
+	}
+
+	tp := meta.Topics[0]
+	numPartitions := len(tp.Partitions)
+	replicationFactor := 1
+	if numPartitions > 0 {
+		replicationFactor = len(tp.Partitions[0].Replicas)
+	}
+
+	configResp, err := client.DescribeConfigs(ctx, &kafka.DescribeConfigsRequest{
+		Addr: client.Addr,
+		Resources: []kafka.DescribeConfigRequestResource{{
+			ResourceType: kafka.ResourceTypeTopic,
+			ResourceName: topic,
+		}},
+	})
+
+	var configs []kafka.ConfigEntry
+	if err == nil {
+		for _, res := range configResp.Resources {
+			if res.Error != nil {
+				continue
+			}
+			for _, e := range res.ConfigEntries {
+				if e.IsDefault || e.ReadOnly || e.IsSensitive {
+					continue
+				}
+				configs = append(configs, kafka.ConfigEntry{
+					ConfigName:  e.ConfigName,
+					ConfigValue: e.ConfigValue,
+				})
+			}
+		}
+	}
+
+	return numPartitions, replicationFactor, configs, nil
+}
+
+// kafkaWaitForTopicAbsent polls metadata until the topic is no longer
+// present, with a short timeout. Used between delete+recreate for purge.
+func (s *Server) kafkaWaitForTopicAbsent(ctx context.Context, client *kafka.Client, topic string) error {
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		meta, err := client.Metadata(ctx, &kafka.MetadataRequest{
+			Addr:   client.Addr,
+			Topics: []string{topic},
+		})
+		if err != nil {
+			return fmt.Errorf("metadata poll failed: %w", err)
+		}
+		if len(meta.Topics) == 0 || meta.Topics[0].Error != nil {
+			return nil
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+	return fmt.Errorf("topic %s still present after delete; broker has delete.topic.enable=false or deletion is slow", topic)
+}
+
+// ── Schema Registry endpoints ──────────────────────────────────────────────
+
+// schemaRegistryRequest performs an HTTP request against the Schema Registry
+// configured on the connection and returns the raw response body and status.
+func (s *Server) schemaRegistryRequest(conn KafkaConnection, method, path string, body any) (int, []byte, error) {
+	base := strings.TrimRight(conn.SchemaRegistryURL, "/")
+	if base == "" {
+		return 0, nil, fmt.Errorf("schemaRegistryUrl is not configured on the connection")
+	}
+
+	var reqBody io.Reader
+	if body != nil {
+		b, err := json.Marshal(body)
+		if err != nil {
+			return 0, nil, fmt.Errorf("marshal body: %w", err)
+		}
+		reqBody = bytes.NewReader(b)
+	}
+
+	hreq, err := http.NewRequest(method, base+path, reqBody)
+	if err != nil {
+		return 0, nil, err
+	}
+	hreq.Header.Set("Accept", "application/vnd.schemaregistry.v1+json, application/json")
+	if body != nil {
+		hreq.Header.Set("Content-Type", "application/vnd.schemaregistry.v1+json")
+	}
+
+	client := &http.Client{Timeout: queryTimeout}
+	hresp, err := client.Do(hreq)
+	if err != nil {
+		return 0, nil, err
+	}
+	defer hresp.Body.Close()
+
+	data, err := io.ReadAll(hresp.Body)
+	if err != nil {
+		return hresp.StatusCode, nil, err
+	}
+	return hresp.StatusCode, data, nil
+}
+
+// writeSchemaRegistryError decodes a Schema Registry error body ({error_code, message})
+// or falls back to the raw body.
+func writeSchemaRegistryError(w http.ResponseWriter, status int, body []byte, start time.Time) {
+	msg := strings.TrimSpace(string(body))
+	var sr struct {
+		ErrorCode int    `json:"error_code"`
+		Message   string `json:"message"`
+	}
+	if json.Unmarshal(body, &sr) == nil && sr.Message != "" {
+		msg = fmt.Sprintf("[%d] %s", sr.ErrorCode, sr.Message)
+	}
+	if msg == "" {
+		msg = fmt.Sprintf("HTTP %d", status)
+	}
+	dur := float64(time.Since(start).Milliseconds())
+	json.NewEncoder(w).Encode(KafkaResponse{Error: msg, DurationMs: dur})
+}
+
+// kafkaHandleSchemas lists all Schema Registry subjects.
+func (s *Server) kafkaHandleSchemas(w http.ResponseWriter, req KafkaRequest) {
+	start := time.Now()
+	status, body, err := s.schemaRegistryRequest(req.Connection, http.MethodGet, "/subjects", nil)
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
+		return
+	}
+	if status >= 300 {
+		writeSchemaRegistryError(w, status, body, start)
+		return
+	}
+	var subjects []string
+	if err := json.Unmarshal(body, &subjects); err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "decode subjects: " + err.Error()})
+		return
+	}
+	sort.Strings(subjects)
+
+	dur := float64(time.Since(start).Milliseconds())
+	json.NewEncoder(w).Encode(KafkaResponse{
+		DurationMs: dur,
+		Data:       map[string]any{"subjects": subjects},
+	})
+}
+
+// kafkaHandleSchemaDetail lists all versions for a subject and returns the
+// latest version content.
+func (s *Server) kafkaHandleSchemaDetail(w http.ResponseWriter, req KafkaRequest) {
+	start := time.Now()
+	if req.Subject == "" {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "subject is required"})
+		return
+	}
+
+	versPath := fmt.Sprintf("/subjects/%s/versions", req.Subject)
+	status, body, err := s.schemaRegistryRequest(req.Connection, http.MethodGet, versPath, nil)
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
+		return
+	}
+	if status >= 300 {
+		writeSchemaRegistryError(w, status, body, start)
+		return
+	}
+	var versions []int
+	if err := json.Unmarshal(body, &versions); err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "decode versions: " + err.Error()})
+		return
+	}
+	sort.Ints(versions)
+
+	// Fetch latest version content for convenience.
+	var latest map[string]any
+	if len(versions) > 0 {
+		latestPath := fmt.Sprintf("/subjects/%s/versions/latest", req.Subject)
+		lStatus, lBody, lErr := s.schemaRegistryRequest(req.Connection, http.MethodGet, latestPath, nil)
+		if lErr == nil && lStatus < 300 {
+			_ = json.Unmarshal(lBody, &latest)
+		}
+	}
+
+	// Try to fetch subject-level compatibility config (may 404 if not set).
+	var compat string
+	cStatus, cBody, cErr := s.schemaRegistryRequest(req.Connection, http.MethodGet, "/config/"+req.Subject, nil)
+	if cErr == nil && cStatus < 300 {
+		var cfg struct {
+			CompatibilityLevel string `json:"compatibilityLevel"`
+		}
+		if json.Unmarshal(cBody, &cfg) == nil {
+			compat = cfg.CompatibilityLevel
+		}
+	}
+
+	dur := float64(time.Since(start).Milliseconds())
+	json.NewEncoder(w).Encode(KafkaResponse{
+		DurationMs: dur,
+		Data: map[string]any{
+			"subject":       req.Subject,
+			"versions":      versions,
+			"latest":        latest,
+			"compatibility": compat,
+		},
+	})
+}
+
+// kafkaHandleSchemaVersion returns a specific schema version's content.
+func (s *Server) kafkaHandleSchemaVersion(w http.ResponseWriter, req KafkaRequest) {
+	start := time.Now()
+	if req.Subject == "" {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "subject is required"})
+		return
+	}
+	version := "latest"
+	if req.SchemaVersion > 0 {
+		version = fmt.Sprintf("%d", req.SchemaVersion)
+	}
+	path := fmt.Sprintf("/subjects/%s/versions/%s", req.Subject, version)
+	status, body, err := s.schemaRegistryRequest(req.Connection, http.MethodGet, path, nil)
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
+		return
+	}
+	if status >= 300 {
+		writeSchemaRegistryError(w, status, body, start)
+		return
+	}
+	var data map[string]any
+	if err := json.Unmarshal(body, &data); err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "decode version: " + err.Error()})
+		return
+	}
+
+	dur := float64(time.Since(start).Milliseconds())
+	json.NewEncoder(w).Encode(KafkaResponse{DurationMs: dur, Data: data})
+}
+
+// kafkaHandleSchemaCreate registers a new schema version under a subject.
+func (s *Server) kafkaHandleSchemaCreate(w http.ResponseWriter, req KafkaRequest) {
+	start := time.Now()
+	if req.Subject == "" {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "subject is required"})
+		return
+	}
+	if strings.TrimSpace(req.SchemaContent) == "" {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "schema content is required"})
+		return
+	}
+
+	schemaType := req.SchemaType
+	if schemaType == "" {
+		schemaType = "AVRO"
+	}
+	body := map[string]any{
+		"schema":     req.SchemaContent,
+		"schemaType": strings.ToUpper(schemaType),
+	}
+
+	path := fmt.Sprintf("/subjects/%s/versions", req.Subject)
+	status, respBody, err := s.schemaRegistryRequest(req.Connection, http.MethodPost, path, body)
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
+		return
+	}
+	if status >= 300 {
+		writeSchemaRegistryError(w, status, respBody, start)
+		return
+	}
+	var data map[string]any
+	if err := json.Unmarshal(respBody, &data); err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "decode register response: " + err.Error()})
+		return
+	}
+
+	dur := float64(time.Since(start).Milliseconds())
+	json.NewEncoder(w).Encode(KafkaResponse{DurationMs: dur, Data: data})
+}
+
+// kafkaHandleSchemaDelete deletes a subject or a specific version.
+func (s *Server) kafkaHandleSchemaDelete(w http.ResponseWriter, req KafkaRequest) {
+	start := time.Now()
+	if req.Subject == "" {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "subject is required"})
+		return
+	}
+
+	var path string
+	if req.SchemaVersion > 0 {
+		path = fmt.Sprintf("/subjects/%s/versions/%d", req.Subject, req.SchemaVersion)
+	} else {
+		path = fmt.Sprintf("/subjects/%s", req.Subject)
+	}
+	status, respBody, err := s.schemaRegistryRequest(req.Connection, http.MethodDelete, path, nil)
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
+		return
+	}
+	if status >= 300 {
+		writeSchemaRegistryError(w, status, respBody, start)
+		return
+	}
+	var data any
+	_ = json.Unmarshal(respBody, &data)
+
+	dur := float64(time.Since(start).Milliseconds())
+	json.NewEncoder(w).Encode(KafkaResponse{
+		DurationMs: dur,
+		Data: map[string]any{
+			"subject": req.Subject,
+			"version": req.SchemaVersion,
+			"result":  data,
+		},
+	})
+}
+
+// kafkaHandleSchemaCompatibility runs a compatibility check for a candidate
+// schema against the latest or specified version of a subject.
+func (s *Server) kafkaHandleSchemaCompatibility(w http.ResponseWriter, req KafkaRequest) {
+	start := time.Now()
+	if req.Subject == "" {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "subject is required"})
+		return
+	}
+	if strings.TrimSpace(req.SchemaContent) == "" {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "schema content is required"})
+		return
+	}
+
+	schemaType := req.SchemaType
+	if schemaType == "" {
+		schemaType = "AVRO"
+	}
+	body := map[string]any{
+		"schema":     req.SchemaContent,
+		"schemaType": strings.ToUpper(schemaType),
+	}
+
+	version := "latest"
+	if req.SchemaVersion > 0 {
+		version = fmt.Sprintf("%d", req.SchemaVersion)
+	}
+	path := fmt.Sprintf("/compatibility/subjects/%s/versions/%s", req.Subject, version)
+	status, respBody, err := s.schemaRegistryRequest(req.Connection, http.MethodPost, path, body)
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
+		return
+	}
+	if status >= 300 {
+		writeSchemaRegistryError(w, status, respBody, start)
+		return
+	}
+	var data map[string]any
+	if err := json.Unmarshal(respBody, &data); err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "decode compatibility: " + err.Error()})
+		return
+	}
+
+	dur := float64(time.Since(start).Milliseconds())
+	json.NewEncoder(w).Encode(KafkaResponse{DurationMs: dur, Data: data})
+}
+
+// kafkaHandleSchemaConfig GETs or PUTs compatibility config globally or per-subject.
+func (s *Server) kafkaHandleSchemaConfig(w http.ResponseWriter, req KafkaRequest) {
+	start := time.Now()
+
+	path := "/config"
+	if req.Subject != "" {
+		path = "/config/" + req.Subject
+	}
+
+	method := http.MethodGet
+	var body any
+	if strings.TrimSpace(req.Compatibility) != "" {
+		method = http.MethodPut
+		body = map[string]any{"compatibility": strings.ToUpper(req.Compatibility)}
+	}
+
+	status, respBody, err := s.schemaRegistryRequest(req.Connection, method, path, body)
+	if err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
+		return
+	}
+	if status >= 300 {
+		writeSchemaRegistryError(w, status, respBody, start)
+		return
+	}
+	var data map[string]any
+	if err := json.Unmarshal(respBody, &data); err != nil {
+		json.NewEncoder(w).Encode(KafkaResponse{Error: "decode config: " + err.Error()})
+		return
+	}
+
+	dur := float64(time.Since(start).Milliseconds())
+	json.NewEncoder(w).Encode(KafkaResponse{DurationMs: dur, Data: data})
 }
 
