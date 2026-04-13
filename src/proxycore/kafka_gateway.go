@@ -92,6 +92,34 @@ func (s *Server) handleKafkaGateway(w http.ResponseWriter, r *http.Request) {
 		s.kafkaHandleGroupResetOffsets(w, req)
 	case "group/delete":
 		s.kafkaHandleGroupDelete(w, req)
+	case "connect/clusters":
+		s.kafkaHandleConnectClusters(w, req)
+	case "connect/connectors":
+		s.kafkaHandleConnectConnectors(w, req)
+	case "connect/connector/detail":
+		s.kafkaHandleConnectConnectorDetail(w, req)
+	case "connect/connector/create":
+		s.kafkaHandleConnectConnectorCreate(w, req)
+	case "connect/connector/update":
+		s.kafkaHandleConnectConnectorUpdate(w, req)
+	case "connect/connector/delete":
+		s.kafkaHandleConnectConnectorDelete(w, req)
+	case "connect/connector/pause":
+		s.kafkaHandleConnectConnectorPause(w, req)
+	case "connect/connector/resume":
+		s.kafkaHandleConnectConnectorResume(w, req)
+	case "connect/connector/restart":
+		s.kafkaHandleConnectConnectorRestart(w, req)
+	case "connect/plugins":
+		s.kafkaHandleConnectPlugins(w, req)
+	case "acls":
+		s.kafkaHandleACLs(w, req)
+	case "acl/create":
+		s.kafkaHandleACLCreate(w, req)
+	case "acl/delete":
+		s.kafkaHandleACLDelete(w, req)
+	case "quotas":
+		s.kafkaHandleQuotas(w, req)
 	default:
 		json.NewEncoder(w).Encode(KafkaResponse{Error: "unknown endpoint: " + path})
 	}
