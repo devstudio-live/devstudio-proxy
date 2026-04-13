@@ -20,9 +20,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Debug - List files
+        run: ls -R
+
       - uses: actions/setup-go@v6
         with:
-          go-version: "1.21"
+          go-version-file: src/go.mod
           cache-dependency-path: src/go.sum
 
       - name: Download dependencies

@@ -39,7 +39,7 @@ dist/
 
 ### Build from source
 
-Requires Go 1.21+.
+Requires Go 1.25+.
 
 ```sh
 # Build for your current platform
