@@ -528,7 +528,7 @@ func (s *Server) kafkaHandleACLs(w http.ResponseWriter, req KafkaRequest) {
 		return
 	}
 
-	entry, err := s.getPooledKafkaClient(req.Connection)
+	entry, err := s.getPooledKafkaClientForReq(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
 		return
@@ -630,7 +630,7 @@ func (s *Server) kafkaHandleACLCreate(w http.ResponseWriter, req KafkaRequest) {
 		host = "*"
 	}
 
-	entry, err := s.getPooledKafkaClient(req.Connection)
+	entry, err := s.getPooledKafkaClientForReq(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
 		return
@@ -689,7 +689,7 @@ func (s *Server) kafkaHandleACLDelete(w http.ResponseWriter, req KafkaRequest) {
 		return
 	}
 
-	entry, err := s.getPooledKafkaClient(req.Connection)
+	entry, err := s.getPooledKafkaClientForReq(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
 		return
@@ -737,7 +737,7 @@ func (s *Server) kafkaHandleACLDelete(w http.ResponseWriter, req KafkaRequest) {
 func (s *Server) kafkaHandleQuotas(w http.ResponseWriter, req KafkaRequest) {
 	start := time.Now()
 
-	entry, err := s.getPooledKafkaClient(req.Connection)
+	entry, err := s.getPooledKafkaClientForReq(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
 		return

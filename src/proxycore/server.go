@@ -117,6 +117,11 @@ type Server struct {
 	kafkaPool     sync.Map
 	kafkaPoolMu   sync.Mutex
 	kafkaPoolSize int
+
+	// Kafka connection-mode pool: SSH tunnels + K8s port-forwards that sit
+	// between the Kafka pool and the actual brokers.
+	kafkaModePool   sync.Map
+	kafkaModePoolMu sync.Mutex
 }
 
 // NewServer creates a Server with default ring buffers and wires the handler.
@@ -153,6 +158,7 @@ func (s *Server) Start(mcpRefresh time.Duration) {
 	go s.startSSHSessionReaper()
 	go s.startSSHTunnelReaper()
 	go s.startKafkaPoolReaper()
+	go s.startKafkaModePoolReaper()
 	go s.startHealthTicker()
 }
 

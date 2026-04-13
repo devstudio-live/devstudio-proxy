@@ -20,7 +20,7 @@ import (
 func (s *Server) kafkaHandleClusterHealth(w http.ResponseWriter, req KafkaRequest) {
 	start := time.Now()
 
-	entry, err := s.getPooledKafkaClient(req.Connection)
+	entry, err := s.getPooledKafkaClientForReq(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
 		return
@@ -105,7 +105,7 @@ func (s *Server) kafkaHandleTopicHealth(w http.ResponseWriter, req KafkaRequest)
 		return
 	}
 
-	entry, err := s.getPooledKafkaClient(req.Connection)
+	entry, err := s.getPooledKafkaClientForReq(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
 		return
@@ -197,7 +197,7 @@ func (s *Server) kafkaHandleTopicHealth(w http.ResponseWriter, req KafkaRequest)
 func (s *Server) kafkaHandleBrokerMetrics(w http.ResponseWriter, req KafkaRequest) {
 	start := time.Now()
 
-	entry, err := s.getPooledKafkaClient(req.Connection)
+	entry, err := s.getPooledKafkaClientForReq(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
 		return
@@ -269,7 +269,7 @@ func (s *Server) kafkaHandleBrokerMetrics(w http.ResponseWriter, req KafkaReques
 func (s *Server) kafkaHandleClusterMetrics(w http.ResponseWriter, req KafkaRequest) {
 	start := time.Now()
 
-	entry, err := s.getPooledKafkaClient(req.Connection)
+	entry, err := s.getPooledKafkaClientForReq(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
 		return
@@ -663,7 +663,7 @@ func (s *Server) kafkaHandleMessagesQuery(w http.ResponseWriter, req KafkaReques
 		return
 	}
 
-	entry, err := s.getPooledKafkaClient(req.Connection)
+	entry, err := s.getPooledKafkaClientForReq(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
 		return
@@ -803,7 +803,7 @@ func (s *Server) kafkaHandleMessagesTrace(w http.ResponseWriter, req KafkaReques
 		return
 	}
 
-	entry, err := s.getPooledKafkaClient(req.Connection)
+	entry, err := s.getPooledKafkaClientForReq(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
 		return
@@ -967,7 +967,7 @@ func (s *Server) kafkaHandleMessagesDiff(w http.ResponseWriter, req KafkaRequest
 		return
 	}
 
-	entry, err := s.getPooledKafkaClient(req.Connection)
+	entry, err := s.getPooledKafkaClientForReq(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(KafkaResponse{Error: err.Error()})
 		return
