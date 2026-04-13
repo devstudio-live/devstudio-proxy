@@ -377,6 +377,10 @@ func (s *Server) handleK8sSSHResource(w http.ResponseWriter, r *http.Request, re
 }
 
 // ── /describe ─────────────────────────────────────────────────────────────────
+//
+// Returns the same shape as the direct-kubeconfig mode:
+//   { item: <full k8s object>, events: [<flattened event objects>] }
+// plus a raw describe text payload in `logs` for convenience.
 
 func (s *Server) handleK8sSSHDescribe(w http.ResponseWriter, r *http.Request, req K8sRequest, sshClient *ssh.Client) {
 	t0 := time.Now()
@@ -388,15 +392,48 @@ func (s *Server) handleK8sSSHDescribe(w http.ResponseWriter, r *http.Request, re
 		return
 	}
 
-	args := append(kubectlContextArgs(req), "describe", req.Resource, req.Name, "-n", kubectlNS(req))
-	stdout, stderr, err := execKubectlWithContext(ctx, sshClient, args...)
+	ns := kubectlNS(req)
+	getArgs := append(kubectlContextArgs(req), "get", req.Resource, req.Name, "-n", ns, "-o", "json")
+	stdout, stderr, err := execKubectlWithContext(ctx, sshClient, getArgs...)
 	if err != nil {
 		json.NewEncoder(w).Encode(K8sResponse{Error: kubectlErrorMessage(stderr, err), DurationMs: ms(t0)})
 		return
 	}
+	var item map[string]any
+	if err := json.Unmarshal(stdout, &item); err != nil {
+		json.NewEncoder(w).Encode(K8sResponse{Error: "parse resource: " + err.Error(), DurationMs: ms(t0)})
+		return
+	}
 
-	json.NewEncoder(w).Encode(K8sResponse{Logs: string(stdout), DurationMs: ms(t0)})
-	_ = stderr
+	// Related events — do not fail the whole call on events error.
+	fieldSel := "involvedObject.name=" + req.Name
+	evArgs := append(kubectlContextArgs(req), "get", "events", "-n", ns, "--field-selector", fieldSel, "-o", "json")
+	evOut, _, evErr := execKubectlWithContext(ctx, sshClient, evArgs...)
+	var events []map[string]any
+	if evErr == nil {
+		if rawItems, pErr := parseKubectlList(evOut); pErr == nil {
+			for _, e := range rawItems {
+				meta, _ := e["metadata"].(map[string]any)
+				src, _ := e["source"].(map[string]any)
+				var sourceComp string
+				if src != nil {
+					sourceComp, _ = src["component"].(string)
+				}
+				events = append(events, map[string]any{
+					"type":      e["type"],
+					"reason":    e["reason"],
+					"message":   e["message"],
+					"count":     e["count"],
+					"firstSeen": e["firstTimestamp"],
+					"lastSeen":  e["lastTimestamp"],
+					"source":    sourceComp,
+					"metadata":  meta,
+				})
+			}
+		}
+	}
+
+	json.NewEncoder(w).Encode(K8sResponse{Item: item, Events: events, DurationMs: ms(t0)})
 }
 
 // ── /yaml ─────────────────────────────────────────────────────────────────────
@@ -550,6 +587,10 @@ func (s *Server) handleK8sSSHAPIResources(w http.ResponseWriter, r *http.Request
 }
 
 // ── /top/pods ─────────────────────────────────────────────────────────────────
+//
+// `kubectl top pods --no-headers` columns (k8s >=1.16):
+//   NAME  CPU(cores)  MEMORY(bytes)
+// With `--containers`, an extra POD column appears first — we don't use that.
 
 func (s *Server) handleK8sSSHTopPods(w http.ResponseWriter, r *http.Request, req K8sRequest, sshClient *ssh.Client) {
 	t0 := time.Now()
@@ -563,11 +604,14 @@ func (s *Server) handleK8sSSHTopPods(w http.ResponseWriter, r *http.Request, req
 		return
 	}
 
-	items := parseTopOutput(stdout)
+	items := parseTopPodsOutput(stdout)
 	json.NewEncoder(w).Encode(K8sResponse{Items: items, DurationMs: ms(t0)})
 }
 
 // ── /top/nodes ────────────────────────────────────────────────────────────────
+//
+// `kubectl top nodes --no-headers` columns:
+//   NAME  CPU(cores)  CPU%  MEMORY(bytes)  MEMORY%
 
 func (s *Server) handleK8sSSHTopNodes(w http.ResponseWriter, r *http.Request, req K8sRequest, sshClient *ssh.Client) {
 	t0 := time.Now()
@@ -581,28 +625,45 @@ func (s *Server) handleK8sSSHTopNodes(w http.ResponseWriter, r *http.Request, re
 		return
 	}
 
-	items := parseTopOutput(stdout)
+	items := parseTopNodesOutput(stdout)
 	json.NewEncoder(w).Encode(K8sResponse{Items: items, DurationMs: ms(t0)})
 }
 
-// parseTopOutput parses the tabular output of kubectl top (pods or nodes).
-func parseTopOutput(raw []byte) []map[string]any {
+// parseTopPodsOutput parses 3-column `kubectl top pods --no-headers` output.
+func parseTopPodsOutput(raw []byte) []map[string]any {
 	var items []map[string]any
 	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 3 {
 			continue
 		}
-		item := map[string]any{"name": fields[0]}
-		if len(fields) >= 3 {
-			item["cpu"] = fields[1]
-			item["memory"] = fields[2]
+		items = append(items, map[string]any{
+			"name":   fields[0],
+			"cpu":    fields[1],
+			"memory": fields[2],
+		})
+	}
+	if items == nil {
+		items = []map[string]any{}
+	}
+	return items
+}
+
+// parseTopNodesOutput parses 5-column `kubectl top nodes --no-headers` output.
+func parseTopNodesOutput(raw []byte) []map[string]any {
+	var items []map[string]any
+	for _, line := range strings.Split(strings.TrimSpace(string(raw)), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 5 {
+			continue
 		}
-		if len(fields) >= 5 {
-			item["cpuPercent"] = fields[3]
-			item["memoryPercent"] = fields[4]
-		}
-		items = append(items, item)
+		items = append(items, map[string]any{
+			"name":          fields[0],
+			"cpu":           fields[1],
+			"cpuPercent":    fields[2],
+			"memory":        fields[3],
+			"memoryPercent": fields[4],
+		})
 	}
 	if items == nil {
 		items = []map[string]any{}
