@@ -118,6 +118,24 @@ func buildKafkaSASL(conn KafkaConnection) (sasl.Mechanism, error) {
 	}
 }
 
+// manualPartitionBalancer is a kafka-go Balancer that writes to a fixed partition
+// regardless of message key. Used when the caller explicitly requests a partition.
+type manualPartitionBalancer struct {
+	partition int
+}
+
+func (b *manualPartitionBalancer) Balance(_ kafka.Message, partitions ...int) int {
+	for _, p := range partitions {
+		if p == b.partition {
+			return p
+		}
+	}
+	if len(partitions) > 0 {
+		return partitions[0]
+	}
+	return 0
+}
+
 // buildKafkaTLSConfig returns a *tls.Config if TLS is enabled, or nil.
 func buildKafkaTLSConfig(conn KafkaConnection) *tls.Config {
 	if !conn.TLS {

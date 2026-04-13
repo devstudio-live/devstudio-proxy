@@ -698,10 +698,14 @@ func (s *Server) kafkaHandleMessagesQuery(w http.ResponseWriter, req KafkaReques
 	var scanned int
 
 	// Start at latest - scanBudget for each partition to get recent messages.
+	// Request BOTH FirstOffset and LastOffset — kafka-go populates only the
+	// requested field and leaves the other at -1, which silently corrupts any
+	// clamping arithmetic if we ask for only one.
 	client := entry.kafkaClient()
 	offsetReqs := make(map[string][]kafka.OffsetRequest)
 	for _, p := range partitions {
-		offsetReqs[parsed.topic] = append(offsetReqs[parsed.topic], kafka.LastOffsetOf(p))
+		offsetReqs[parsed.topic] = append(offsetReqs[parsed.topic],
+			kafka.FirstOffsetOf(p), kafka.LastOffsetOf(p))
 	}
 	startOffs := make(map[int]int64)
 	if offResp, oErr := client.ListOffsets(ctx, &kafka.ListOffsetsRequest{
@@ -712,9 +716,13 @@ func (s *Server) kafkaHandleMessagesQuery(w http.ResponseWriter, req KafkaReques
 			budgetPer = 10
 		}
 		for _, po := range offResp.Topics[parsed.topic] {
+			first := po.FirstOffset
+			if first < 0 {
+				first = 0
+			}
 			off := po.LastOffset - int64(budgetPer)
-			if off < po.FirstOffset {
-				off = po.FirstOffset
+			if off < first {
+				off = first
 			}
 			startOffs[po.Partition] = off
 		}
@@ -735,10 +743,19 @@ func (s *Server) kafkaHandleMessagesQuery(w http.ResponseWriter, req KafkaReques
 		})
 		reader.SetOffset(startOff)
 
+		// Cold-start a reader can take longer than a single-message read budget;
+		// give the first read a generous timeout, then shorter timeouts for
+		// subsequent reads since the reader is warm at that point.
+		firstRead := true
 		for scanned < scanBudget && len(matches) < parsed.limit {
-			readCtx, readCancel := context.WithTimeout(ctx, 3*time.Second)
+			readTO := 2 * time.Second
+			if firstRead {
+				readTO = 10 * time.Second
+			}
+			readCtx, readCancel := context.WithTimeout(ctx, readTO)
 			m, err := reader.ReadMessage(readCtx)
 			readCancel()
+			firstRead = false
 			if err != nil {
 				break
 			}
@@ -852,7 +869,8 @@ func (s *Server) kafkaHandleMessagesTrace(w http.ResponseWriter, req KafkaReques
 		// Start from latest - perTopicBudget.
 		offsetReqs := make(map[string][]kafka.OffsetRequest)
 		for _, p := range partitions {
-			offsetReqs[topic] = append(offsetReqs[topic], kafka.LastOffsetOf(p))
+			offsetReqs[topic] = append(offsetReqs[topic],
+				kafka.FirstOffsetOf(p), kafka.LastOffsetOf(p))
 		}
 		startOffs := make(map[int]int64)
 		if offResp, oErr := client.ListOffsets(ctx, &kafka.ListOffsetsRequest{
@@ -863,9 +881,13 @@ func (s *Server) kafkaHandleMessagesTrace(w http.ResponseWriter, req KafkaReques
 				budgetPerPart = 10
 			}
 			for _, po := range offResp.Topics[topic] {
+				first := po.FirstOffset
+				if first < 0 {
+					first = 0
+				}
 				off := po.LastOffset - int64(budgetPerPart)
-				if off < po.FirstOffset {
-					off = po.FirstOffset
+				if off < first {
+					off = first
 				}
 				startOffs[po.Partition] = off
 			}

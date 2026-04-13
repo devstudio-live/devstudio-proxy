@@ -226,7 +226,11 @@ func (s *Server) kafkaHandleBrokers(w http.ResponseWriter, req KafkaRequest) {
 	dur := float64(time.Since(start).Milliseconds())
 	json.NewEncoder(w).Encode(KafkaResponse{
 		DurationMs: dur,
-		Data:       brokers,
+		Data: map[string]any{
+			"brokers":      brokers,
+			"controllerID": meta.Controller.ID,
+			"clusterID":    meta.ClusterID,
+		},
 	})
 }
 
@@ -395,7 +399,10 @@ func (s *Server) kafkaHandleTopics(w http.ResponseWriter, req KafkaRequest) {
 	dur := float64(time.Since(start).Milliseconds())
 	json.NewEncoder(w).Encode(KafkaResponse{
 		DurationMs: dur,
-		Data:       topics,
+		Data: map[string]any{
+			"topics": topics,
+			"total":  len(topics),
+		},
 	})
 }
 
@@ -616,11 +623,15 @@ func (s *Server) kafkaHandleMessages(w http.ResponseWriter, req KafkaRequest) {
 			startOffsets[p] = req.Offset
 		}
 	} else {
-		// Default: latest minus limit (show most recent messages)
+		// Default: latest minus limit (show most recent messages).
+		// Request BOTH FirstOffset and LastOffset — kafka-go populates only
+		// the requested field and leaves the other at -1, which would
+		// silently corrupt the clamping logic below.
 		client := entry.kafkaClient()
 		offsetReqs := make(map[string][]kafka.OffsetRequest)
 		for _, p := range partitions {
-			offsetReqs[req.Topic] = append(offsetReqs[req.Topic], kafka.LastOffsetOf(p))
+			offsetReqs[req.Topic] = append(offsetReqs[req.Topic],
+				kafka.FirstOffsetOf(p), kafka.LastOffsetOf(p))
 		}
 		offResp, err := client.ListOffsets(ctx, &kafka.ListOffsetsRequest{
 			Addr:   client.Addr,
@@ -628,9 +639,13 @@ func (s *Server) kafkaHandleMessages(w http.ResponseWriter, req KafkaRequest) {
 		})
 		if err == nil {
 			for _, po := range offResp.Topics[req.Topic] {
+				first := po.FirstOffset
+				if first < 0 {
+					first = 0
+				}
 				off := po.LastOffset - int64(limit)
-				if off < po.FirstOffset {
-					off = po.FirstOffset
+				if off < first {
+					off = first
 				}
 				startOffsets[po.Partition] = off
 			}
@@ -747,8 +762,9 @@ func (s *Server) kafkaHandleMessagesProduce(w http.ResponseWriter, req KafkaRequ
 		return
 	}
 
+	// kafka-go Writer requires Topic to be set on the Writer OR the Message,
+	// but not both; we configure Topic on the Writer and leave it empty on Message.
 	msg := kafka.Message{
-		Topic: req.Topic,
 		Key:   []byte(req.Key),
 		Value: []byte(req.Value),
 	}
@@ -763,7 +779,7 @@ func (s *Server) kafkaHandleMessagesProduce(w http.ResponseWriter, req KafkaRequ
 		Transport: entry.transport,
 	}
 	if req.Partition >= 0 {
-		writer.Balancer = &kafka.RoundRobin{} // partition selection is via the message
+		writer.Balancer = &manualPartitionBalancer{partition: req.Partition}
 		msg.Partition = req.Partition
 	}
 	defer writer.Close()
@@ -771,7 +787,8 @@ func (s *Server) kafkaHandleMessagesProduce(w http.ResponseWriter, req KafkaRequ
 	ctx, cancel := context.WithTimeout(context.Background(), queryTimeout)
 	defer cancel()
 
-	if err := writer.WriteMessages(ctx, msg); err != nil {
+	msgs := []kafka.Message{msg}
+	if err := writer.WriteMessages(ctx, msgs...); err != nil {
 		json.NewEncoder(w).Encode(KafkaResponse{Error: "produce failed: " + err.Error()})
 		return
 	}
@@ -781,7 +798,8 @@ func (s *Server) kafkaHandleMessagesProduce(w http.ResponseWriter, req KafkaRequ
 		DurationMs: dur,
 		Data: map[string]any{
 			"topic":     req.Topic,
-			"partition": req.Partition,
+			"partition": msgs[0].Partition,
+			"offset":    msgs[0].Offset,
 		},
 	})
 }
@@ -1065,9 +1083,21 @@ func (s *Server) kafkaHandleGroups(w http.ResponseWriter, req KafkaRequest) {
 		return
 	}
 
+	type groupInfo struct {
+		GroupID      string `json:"groupId"`
+		State        string `json:"state"`
+		ProtocolType string `json:"protocolType"`
+		Members      int    `json:"members"`
+	}
+
+	search := strings.ToLower(req.Search)
+
 	if len(listResp.Groups) == 0 {
 		dur := float64(time.Since(start).Milliseconds())
-		json.NewEncoder(w).Encode(KafkaResponse{DurationMs: dur, Data: []any{}})
+		json.NewEncoder(w).Encode(KafkaResponse{
+			DurationMs: dur,
+			Data:       map[string]any{"groups": []groupInfo{}, "total": 0},
+		})
 		return
 	}
 
@@ -1079,43 +1109,58 @@ func (s *Server) kafkaHandleGroups(w http.ResponseWriter, req KafkaRequest) {
 		protocolTypes[g.GroupID] = g.ProtocolType
 	}
 
-	descResp, err := client.DescribeGroups(ctx, &kafka.DescribeGroupsRequest{
+	// Attempt DescribeGroups to enrich with state + member counts.
+	// Kafka 3.9 / kafka-go 0.4.50 can fail to decode v5 responses in some edge cases;
+	// if that happens, gracefully fall back to the (less rich) ListGroups data
+	// rather than returning a hard error.
+	descResp, descErr := client.DescribeGroups(ctx, &kafka.DescribeGroupsRequest{
 		Addr:     client.Addr,
 		GroupIDs: groupIDs,
 	})
-	if err != nil {
-		json.NewEncoder(w).Encode(KafkaResponse{Error: "describe groups failed: " + err.Error()})
-		return
-	}
 
-	type groupInfo struct {
-		GroupID       string `json:"groupId"`
-		State        string `json:"state"`
-		ProtocolType string `json:"protocolType"`
-		Members      int    `json:"members"`
-	}
-
-	search := strings.ToLower(req.Search)
 	var groups []groupInfo
-	for _, g := range descResp.Groups {
-		if g.Error != nil {
-			continue
+	var describeWarning string
+	if descErr != nil {
+		describeWarning = "describe groups failed, showing basic list: " + descErr.Error()
+		for _, g := range listResp.Groups {
+			if search != "" && !strings.Contains(strings.ToLower(g.GroupID), search) {
+				continue
+			}
+			groups = append(groups, groupInfo{
+				GroupID:      g.GroupID,
+				State:        "Unknown",
+				ProtocolType: g.ProtocolType,
+				Members:      0,
+			})
 		}
-		if search != "" && !strings.Contains(strings.ToLower(g.GroupID), search) {
-			continue
+	} else {
+		for _, g := range descResp.Groups {
+			if g.Error != nil {
+				continue
+			}
+			if search != "" && !strings.Contains(strings.ToLower(g.GroupID), search) {
+				continue
+			}
+			groups = append(groups, groupInfo{
+				GroupID:      g.GroupID,
+				State:        g.GroupState,
+				ProtocolType: protocolTypes[g.GroupID],
+				Members:      len(g.Members),
+			})
 		}
-		groups = append(groups, groupInfo{
-			GroupID:       g.GroupID,
-			State:        g.GroupState,
-			ProtocolType: protocolTypes[g.GroupID],
-			Members:      len(g.Members),
-		})
 	}
 
 	sort.Slice(groups, func(i, j int) bool { return groups[i].GroupID < groups[j].GroupID })
 
 	dur := float64(time.Since(start).Milliseconds())
-	json.NewEncoder(w).Encode(KafkaResponse{DurationMs: dur, Data: groups})
+	data := map[string]any{
+		"groups": groups,
+		"total":  len(groups),
+	}
+	if describeWarning != "" {
+		data["warning"] = describeWarning
+	}
+	json.NewEncoder(w).Encode(KafkaResponse{DurationMs: dur, Data: data})
 }
 
 // kafkaHandleGroupDetail returns group members, assignments, and lag.
