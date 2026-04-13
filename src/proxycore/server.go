@@ -112,6 +112,11 @@ type Server struct {
 
 	// SSH tunnels (Phase 3)
 	sshTunnels sync.Map
+
+	// Kafka connection pool
+	kafkaPool     sync.Map
+	kafkaPoolMu   sync.Mutex
+	kafkaPoolSize int
 }
 
 // NewServer creates a Server with default ring buffers and wires the handler.
@@ -147,6 +152,7 @@ func (s *Server) Start(mcpRefresh time.Duration) {
 	go s.startSSHPoolReaper()
 	go s.startSSHSessionReaper()
 	go s.startSSHTunnelReaper()
+	go s.startKafkaPoolReaper()
 	go s.startHealthTicker()
 }
 

@@ -114,6 +114,9 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		case "ssh":
 			h.s.handleSSHGateway(w, r)
 			return
+		case "kafka":
+			h.s.handleKafkaGateway(w, r)
+			return
 		default:
 			setCORS(w, r)
 			w.Header().Set("Content-Type", "application/json")

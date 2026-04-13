@@ -351,6 +351,7 @@ func (s *Server) adminInternals(w http.ResponseWriter, r *http.Request) {
 			"mongo":   map[string]any{"active": s.mongoPoolSize, "max": maxPoolSize},
 			"redis":   map[string]any{"active": s.redisPoolSize, "max": maxPoolSize},
 			"elastic": map[string]any{"active": s.elasticPoolSize, "max": maxPoolSize},
+			"kafka":   map[string]any{"active": s.kafkaPoolSize, "max": maxPoolSize},
 			"k8s":     map[string]any{"active": s.k8sPoolSize, "max": maxK8sPoolSize},
 		},
 		"context_cache": map[string]any{
