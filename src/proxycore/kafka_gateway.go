@@ -120,6 +120,20 @@ func (s *Server) handleKafkaGateway(w http.ResponseWriter, r *http.Request) {
 		s.kafkaHandleACLDelete(w, req)
 	case "quotas":
 		s.kafkaHandleQuotas(w, req)
+	case "cluster/health":
+		s.kafkaHandleClusterHealth(w, req)
+	case "topic/health":
+		s.kafkaHandleTopicHealth(w, req)
+	case "broker/metrics":
+		s.kafkaHandleBrokerMetrics(w, req)
+	case "cluster/metrics":
+		s.kafkaHandleClusterMetrics(w, req)
+	case "messages/query":
+		s.kafkaHandleMessagesQuery(w, req)
+	case "messages/trace":
+		s.kafkaHandleMessagesTrace(w, req)
+	case "messages/diff":
+		s.kafkaHandleMessagesDiff(w, req)
 	default:
 		json.NewEncoder(w).Encode(KafkaResponse{Error: "unknown endpoint: " + path})
 	}
