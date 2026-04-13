@@ -7,7 +7,6 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"syscall"
 )
 
 // ── HPROF Binary Format Constants ───────────────────────────────────────────
@@ -98,7 +97,7 @@ type HprofResult struct {
 // Close releases mmapped memory.
 func (r *HprofResult) Close() {
 	if r.mmapData != nil {
-		_ = syscall.Munmap(r.mmapData)
+		_ = munmapFile(r.mmapData)
 		r.mmapData = nil
 	}
 }
@@ -278,7 +277,7 @@ func ParseHprof(path string, cancel <-chan struct{}, progress ProgressCallback) 
 		return nil, fmt.Errorf("file too small to be a valid HPROF file (%d bytes)", fileSize)
 	}
 
-	data, err := syscall.Mmap(int(f.Fd()), 0, int(fileSize), syscall.PROT_READ, syscall.MAP_PRIVATE)
+	data, err := mmapFile(int(f.Fd()), int(fileSize))
 	if err != nil {
 		return nil, fmt.Errorf("mmap: %w", err)
 	}
@@ -316,7 +315,7 @@ func ParseHprof(path string, cancel <-chan struct{}, progress ProgressCallback) 
 	// Parse header
 	version, headerEnd, idSize, timestamp, err := p.parseHeader()
 	if err != nil {
-		_ = syscall.Munmap(data)
+		_ = munmapFile(data)
 		return nil, err
 	}
 	p.idSize = idSize
@@ -327,7 +326,7 @@ func ParseHprof(path string, cancel <-chan struct{}, progress ProgressCallback) 
 
 	// Pass 1: collect strings, classes, segment offsets
 	if err := p.pass1(headerEnd, cancel, progress); err != nil {
-		_ = syscall.Munmap(data)
+		_ = munmapFile(data)
 		return nil, fmt.Errorf("pass1: %w", err)
 	}
 
@@ -347,7 +346,7 @@ func ParseHprof(path string, cancel <-chan struct{}, progress ProgressCallback) 
 
 	// Pass 2: parse heap segments
 	if err := p.pass2(cancel, progress); err != nil {
-		_ = syscall.Munmap(data)
+		_ = munmapFile(data)
 		return nil, fmt.Errorf("pass2: %w", err)
 	}
 
