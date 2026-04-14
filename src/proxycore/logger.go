@@ -2,13 +2,17 @@ package proxycore
 
 import (
 	"bufio"
+	"bytes"
 	"io"
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
+
+const trafficBodyCap = 2048 // bytes captured per side when verbose
 
 // ── Log ring buffer with SSE subscriptions ────────────────────────────────────
 
@@ -138,8 +142,11 @@ func (s *Server) initLogOutput() {
 // and number of bytes written for logging purposes.
 type LoggingResponseWriter struct {
 	http.ResponseWriter
-	status int
-	bytes  int64
+	status    int
+	bytes     int64
+	captureOn bool
+	capBuf    bytes.Buffer
+	capTrunc  bool
 }
 
 func (lrw *LoggingResponseWriter) WriteHeader(code int) {
@@ -150,6 +157,19 @@ func (lrw *LoggingResponseWriter) WriteHeader(code int) {
 func (lrw *LoggingResponseWriter) Write(b []byte) (int, error) {
 	n, err := lrw.ResponseWriter.Write(b)
 	lrw.bytes += int64(n)
+	if lrw.captureOn && n > 0 {
+		remaining := trafficBodyCap - lrw.capBuf.Len()
+		if remaining > 0 {
+			if n <= remaining {
+				lrw.capBuf.Write(b[:n])
+			} else {
+				lrw.capBuf.Write(b[:remaining])
+				lrw.capTrunc = true
+			}
+		} else {
+			lrw.capTrunc = true
+		}
+	}
 	return n, err
 }
 
@@ -174,6 +194,63 @@ func (s *Server) NewLoggingMiddleware(next http.Handler) http.Handler {
 	return &loggingMiddleware{s: s, next: next}
 }
 
+// bodyCaptureReader tees up to trafficBodyCap bytes into cap while passing
+// through to the underlying reader unchanged.
+type bodyCaptureReader struct {
+	r      io.ReadCloser
+	cap    *bytes.Buffer
+	trunc  *bool
+	remain int
+}
+
+func (b *bodyCaptureReader) Read(p []byte) (int, error) {
+	n, err := b.r.Read(p)
+	if n > 0 && b.remain > 0 {
+		take := n
+		if take > b.remain {
+			take = b.remain
+			*b.trunc = true
+		}
+		b.cap.Write(p[:take])
+		b.remain -= take
+		if b.remain == 0 && n > take {
+			*b.trunc = true
+		}
+	} else if n > 0 && b.remain == 0 {
+		*b.trunc = true
+	}
+	return n, err
+}
+
+func (b *bodyCaptureReader) Close() error { return b.r.Close() }
+
+// isWebSocketUpgrade returns true when the request is a WebSocket upgrade.
+func isWebSocketUpgrade(r *http.Request) bool {
+	if !strings.EqualFold(r.Header.Get("Connection"), "upgrade") &&
+		!strings.Contains(strings.ToLower(r.Header.Get("Connection")), "upgrade") {
+		return false
+	}
+	return strings.EqualFold(r.Header.Get("Upgrade"), "websocket")
+}
+
+// sanitizeBodyPreview returns a UTF-8-safe preview, replacing control bytes
+// so the JSON frame stays valid and the UI can display it.
+func sanitizeBodyPreview(b []byte) string {
+	if len(b) == 0 {
+		return ""
+	}
+	// Replace NUL and other invalid control bytes with a placeholder char.
+	out := make([]byte, 0, len(b))
+	for _, c := range b {
+		if c == '\t' || c == '\n' || c == '\r' || (c >= 0x20 && c < 0x7f) || c >= 0x80 {
+			out = append(out, c)
+		} else {
+			out = append(out, '.')
+		}
+	}
+	return string(out)
+}
+
 func (m *loggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	verbose := m.s.VerboseEnabled.Load()
 	enabled := m.s.LogEnabled.Load() || verbose
@@ -187,8 +264,31 @@ func (m *loggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Detect gateway metadata early — gateway handlers strip these headers
+	// for defense-in-depth before the middleware would otherwise read them.
+	operation := r.Header.Get("X-DevStudio-Gateway-Operation")
+	target := r.Header.Get("X-DevStudio-Gateway-Target")
+	protocol := detectProtocol(r)
+	wsUpgrade := isWebSocketUpgrade(r)
+
+	// Request body capture (verbose only, never for WS which hijacks).
+	var reqCap *bytes.Buffer
+	var reqTrunc bool
+	if verbose && !wsUpgrade && r.Body != nil && r.ContentLength != 0 {
+		reqCap = &bytes.Buffer{}
+		r.Body = &bodyCaptureReader{
+			r:      r.Body,
+			cap:    reqCap,
+			trunc:  &reqTrunc,
+			remain: trafficBodyCap,
+		}
+	}
+
 	start := time.Now()
 	lrw := &LoggingResponseWriter{ResponseWriter: w, status: 200}
+	if verbose && !wsUpgrade {
+		lrw.captureOn = true
+	}
 	m.next.ServeHTTP(lrw, r)
 	duration := time.Since(start)
 
@@ -203,15 +303,27 @@ func (m *loggingMiddleware) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			Timestamp:  start.UnixMilli(),
 			Method:     r.Method,
 			Path:       r.URL.Path,
-			Protocol:   detectProtocol(r),
+			Protocol:   protocol,
+			Operation:  operation,
+			Target:     target,
+			RemoteAddr: r.RemoteAddr,
 			Status:     lrw.status,
 			DurationUS: duration.Microseconds(),
 			ReqSize:    r.ContentLength,
 			RespSize:   lrw.bytes,
+			WSUpgrade:  wsUpgrade,
 		}
-		if m.s.VerboseEnabled.Load() {
+		if verbose {
 			rec.ReqHeaders = flattenHeaders(r.Header)
 			rec.RespHeaders = flattenHeaders(lrw.Header())
+			if reqCap != nil && reqCap.Len() > 0 {
+				rec.ReqBody = sanitizeBodyPreview(reqCap.Bytes())
+				rec.ReqBodyTrunc = reqTrunc
+			}
+			if lrw.capBuf.Len() > 0 {
+				rec.RespBody = sanitizeBodyPreview(lrw.capBuf.Bytes())
+				rec.RespBodyTrunc = lrw.capTrunc
+			}
 		}
 		m.s.TrafficBuf.Push(rec)
 	}

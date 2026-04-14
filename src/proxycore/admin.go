@@ -33,6 +33,10 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		s.adminEvents(w, r)
 	case r.URL.Path == "/admin/traffic" && r.Method == http.MethodGet:
 		s.adminTraffic(w, r)
+	case r.URL.Path == "/admin/traffic" && r.Method == http.MethodDelete:
+		s.adminTrafficClear(w, r)
+	case r.URL.Path == "/admin/traffic/stats" && r.Method == http.MethodGet:
+		s.adminTrafficStats(w, r)
 	case r.URL.Path == "/admin/internals" && r.Method == http.MethodGet:
 		s.adminInternals(w, r)
 	default:
@@ -314,6 +318,23 @@ func (s *Server) adminTraffic(w http.ResponseWriter, r *http.Request) {
 			flusher.Flush()
 		}
 	}
+}
+
+func (s *Server) adminTrafficClear(w http.ResponseWriter, r *http.Request) {
+	if s.TrafficBuf != nil {
+		s.TrafficBuf.Clear()
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"ok": true}) //nolint:errcheck
+}
+
+func (s *Server) adminTrafficStats(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if s.TrafficBuf == nil {
+		json.NewEncoder(w).Encode(TrafficStats{}) //nolint:errcheck
+		return
+	}
+	json.NewEncoder(w).Encode(s.TrafficBuf.Stats()) //nolint:errcheck
 }
 
 func (s *Server) adminInternals(w http.ResponseWriter, r *http.Request) {
