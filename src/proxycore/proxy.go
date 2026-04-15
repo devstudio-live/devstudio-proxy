@@ -69,6 +69,12 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// URL Opener inspection (SSL cert, DNS/CDN, URLhaus phishing check)
+	if r.URL.Path == "/urlopener/inspect" && r.URL.Host == "" {
+		h.s.handleURLOpenerInspect(w, r)
+		return
+	}
+
 	// K8s exec WebSocket endpoint (Phase 2) — must be before gateway dispatch
 	if r.URL.Path == "/k8s/exec" && r.URL.Host == "" {
 		h.s.handleK8sExec(w, r)
