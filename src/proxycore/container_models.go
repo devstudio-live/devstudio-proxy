@@ -67,6 +67,8 @@ type ContainerResponse struct {
 	SecurityAudit   *SecurityAudit     `json:"securityAudit,omitempty"`
 	VulnScan        *VulnScanResult    `json:"vulnScan,omitempty"`
 	VulnScanners    []VulnScanResult   `json:"vulnScanners,omitempty"`
+	ExportRun       string             `json:"exportRun,omitempty"`
+	ExportCompose   string             `json:"exportCompose,omitempty"`
 	OK              bool               `json:"ok,omitempty"`
 	Error           string           `json:"error,omitempty"`
 	DurationMs      float64          `json:"durationMs"`

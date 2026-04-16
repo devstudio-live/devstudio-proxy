@@ -196,6 +196,12 @@ func (s *Server) handleContainerGateway(w http.ResponseWriter, r *http.Request) 
 	case "security/scan":
 		s.handleVulnScan(w, req)
 
+	// ── Export (Phase 5C) ─────────────────────────────────────
+	case "container/export-run":
+		s.handleContainerExportRun(w, req)
+	case "container/export-compose":
+		s.handleContainerExportCompose(w, req)
+
 	// ── Multi-runtime unified view (Phase 4C) ──────────────────
 	case "multi/containers":
 		s.handleMultiContainers(w, req)
