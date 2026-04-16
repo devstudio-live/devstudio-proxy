@@ -89,7 +89,11 @@ func (s *Server) adminUpdateApply(w http.ResponseWriter, r *http.Request) {
 		if err := Restart(); err != nil {
 			log.Printf("proxy: restart after update failed: %v — rolling back", err)
 			setUpdateStatus(UpdateStateError, 0, "restart failed: "+err.Error())
-			rollbackUpdate()
+			if BuildSource == "wails-app" {
+				rollbackBundleUpdate()
+			} else {
+				rollbackUpdate()
+			}
 		}
 	}()
 }

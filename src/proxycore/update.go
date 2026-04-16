@@ -86,25 +86,35 @@ func ApplyUpdate(ctx context.Context, targetVersion string) error {
 		return err
 	}
 
-	// Disk-space precheck: need ~3x the current binary size.
-	exe, err := os.Executable()
-	if err != nil {
-		setUpdateStatus(UpdateStateError, 0, err.Error())
-		return fmt.Errorf("executable path: %w", err)
-	}
-	if fi, statErr := os.Stat(exe); statErr == nil {
-		needed := fi.Size() * 3
-		if dsErr := checkDiskSpace(filepath.Dir(exe), needed); dsErr != nil {
-			setUpdateStatus(UpdateStateError, 0, dsErr.Error())
-			return dsErr
+	// Dispatch: bundle-swap for Wails .app, binary-replace for everything else.
+	if BuildSource == "wails-app" {
+		// Disk-space precheck is inside applyBundleUpdate (uses bundle size).
+		setUpdateStatus(UpdateStateDownloading, 0.1, "")
+		if err := applyBundleUpdate(ctx, targetVersion); err != nil {
+			setUpdateStatus(UpdateStateError, 0, err.Error())
+			return err
 		}
-	}
+	} else {
+		// Disk-space precheck: need ~3x the current binary size.
+		exe, err := os.Executable()
+		if err != nil {
+			setUpdateStatus(UpdateStateError, 0, err.Error())
+			return fmt.Errorf("executable path: %w", err)
+		}
+		if fi, statErr := os.Stat(exe); statErr == nil {
+			needed := fi.Size() * 3
+			if dsErr := checkDiskSpace(filepath.Dir(exe), needed); dsErr != nil {
+				setUpdateStatus(UpdateStateError, 0, dsErr.Error())
+				return dsErr
+			}
+		}
 
-	setUpdateStatus(UpdateStateDownloading, 0.1, "")
+		setUpdateStatus(UpdateStateDownloading, 0.1, "")
 
-	if err := downloadAndApply(ctx, targetVersion); err != nil {
-		setUpdateStatus(UpdateStateError, 0, err.Error())
-		return err
+		if err := downloadAndApply(ctx, targetVersion); err != nil {
+			setUpdateStatus(UpdateStateError, 0, err.Error())
+			return err
+		}
 	}
 
 	setUpdateStatus(UpdateStateRestarting, 1.0, "")

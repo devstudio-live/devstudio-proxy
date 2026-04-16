@@ -40,7 +40,7 @@ WAILS_LDFLAGS_BASE = -s -w \
 WAILS_LDFLAGS_APP = $(WAILS_LDFLAGS_BASE) -X devstudio/proxy/proxycore.BuildSource=wails-app
 WAILS_LDFLAGS_EXE = $(WAILS_LDFLAGS_BASE) -X devstudio/proxy/proxycore.BuildSource=wails-exe
 
-.PHONY: all full clean test checksums wails-setup wails-mac wails-dev wails-full $(PLATFORMS_ALL)
+.PHONY: all full clean test checksums wails-setup wails-mac wails-dev wails-full wails-zip $(PLATFORMS_ALL)
 
 all: $(PLATFORMS_DARWIN) checksums
 
@@ -80,6 +80,11 @@ wails-mac: wails-setup
 wails-dev: wails-mac
 	DEVSTUDIO_TARGET_URL=http://localhost:5173 \
 		$(WAILS_BIN)/devproxy.app/Contents/MacOS/devproxy
+
+# Zip the .app bundle for release distribution (per-arch names, universal binary).
+wails-zip: wails-mac
+	cd $(WAILS_BIN) && ditto -c -k --keepParent devproxy.app devproxy-darwin-arm64.app.zip
+	cp $(WAILS_BIN)/devproxy-darwin-arm64.app.zip $(WAILS_BIN)/devproxy-darwin-amd64.app.zip
 
 # All platforms: macOS (as above) + Windows + Linux
 wails-full: wails-mac

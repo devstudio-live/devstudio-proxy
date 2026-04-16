@@ -15,10 +15,10 @@ import (
 // For Wails single-file builds (BuildSource "wails-exe"), it spawns a detached
 // child and exits — syscall.Exec would kill the Wails webview abruptly.
 //
-// Wails .app bundle restart (BuildSource "wails-app") is deferred to Phase 5B.
+// Wails .app bundle restart (BuildSource "wails-app") uses bundle-swap + "open -a".
 func Restart() error {
 	if BuildSource == "wails-app" {
-		return fmt.Errorf("wails .app bundle restart not yet supported")
+		return restartBundleApp()
 	}
 
 	exe, err := os.Executable()

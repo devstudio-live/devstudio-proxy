@@ -92,3 +92,116 @@ jobs:
             echo "Push attempt ${attempt} failed, retrying..."
             sleep 2
           done
+
+  release-wails-macos:
+    needs: release
+    runs-on: macos-latest
+    if: ${{ vars.ENABLE_WAILS_RELEASE == 'true' }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: src/go.mod
+          cache-dependency-path: src/go.sum
+
+      - name: Install Wails CLI
+        run: go install github.com/wailsapp/wails/v2/cmd/wails@latest
+
+      - name: Download dependencies
+        working-directory: src
+        run: go mod download
+
+      - name: Download Wails dependencies
+        working-directory: wails
+        run: go mod download
+
+      - name: Set version in wails.json
+        run: |
+          VERSION="${{ github.ref_name }}"
+          sed -i '' "s/\"productVersion\": \"[^\"]*\"/\"productVersion\": \"${VERSION#v}\"/" wails/wails.json
+
+      - name: Build Wails macOS .app (universal)
+        working-directory: src
+        run: |
+          VERSION="${{ github.ref_name }}"
+          COMMIT="${{ github.sha }}"
+          BUILD_DATE="$(date -u +%FT%TZ)"
+          make wails-mac VERSION="${VERSION}" COMMIT="${COMMIT:0:7}" BUILD_DATE="${BUILD_DATE}"
+
+      - name: Import signing certificate
+        if: ${{ env.APPLE_DEVELOPER_ID_CERT_BASE64 != '' }}
+        env:
+          APPLE_DEVELOPER_ID_CERT_BASE64: ${{ secrets.APPLE_DEVELOPER_ID_CERT_BASE64 }}
+          APPLE_DEVELOPER_ID_CERT_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_CERT_PASSWORD }}
+        run: |
+          KEYCHAIN="build.keychain-db"
+          security create-keychain -p "" "${KEYCHAIN}"
+          security default-keychain -s "${KEYCHAIN}"
+          security unlock-keychain -p "" "${KEYCHAIN}"
+          echo "${APPLE_DEVELOPER_ID_CERT_BASE64}" | base64 --decode > /tmp/cert.p12
+          security import /tmp/cert.p12 -k "${KEYCHAIN}" \
+            -P "${APPLE_DEVELOPER_ID_CERT_PASSWORD}" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" "${KEYCHAIN}"
+          rm /tmp/cert.p12
+
+      - name: Codesign .app bundle
+        if: ${{ env.APPLE_DEVELOPER_ID != '' }}
+        env:
+          APPLE_DEVELOPER_ID: ${{ secrets.APPLE_DEVELOPER_ID }}
+        run: |
+          APP="wails/build/bin/devproxy.app"
+          codesign --deep --force --options=runtime \
+            --sign "${APPLE_DEVELOPER_ID}" "${APP}"
+          codesign --verify --deep --strict "${APP}"
+
+      - name: Notarize .app bundle
+        if: ${{ env.APPLE_ID != '' }}
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_ID_PASSWORD: ${{ secrets.APPLE_ID_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          APP="wails/build/bin/devproxy.app"
+          # Zip for notarization submission.
+          ditto -c -k --keepParent "${APP}" /tmp/devproxy-notarize.zip
+          xcrun notarytool submit /tmp/devproxy-notarize.zip \
+            --apple-id "${APPLE_ID}" \
+            --password "${APPLE_ID_PASSWORD}" \
+            --team-id "${APPLE_TEAM_ID}" \
+            --wait
+          xcrun stapler staple "${APP}"
+
+      - name: Package .app.zip for release
+        run: |
+          APP="wails/build/bin/devproxy.app"
+          DIST="wails/build/bin"
+          # Create per-arch named zips (universal binary works on both architectures).
+          ditto -c -k --keepParent "${APP}" "${DIST}/devproxy-darwin-arm64.app.zip"
+          cp "${DIST}/devproxy-darwin-arm64.app.zip" "${DIST}/devproxy-darwin-amd64.app.zip"
+
+      - name: Update checksums.txt with .app.zip entries
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          DIST="wails/build/bin"
+          # Download existing checksums.txt from the release.
+          gh release download "${TAG}" -p checksums.txt -D /tmp/ || true
+          # Append .app.zip checksums.
+          cd "${DIST}"
+          shasum -a 256 devproxy-darwin-arm64.app.zip devproxy-darwin-amd64.app.zip >> /tmp/checksums.txt
+          # Re-upload (clobber replaces existing asset).
+          gh release upload "${TAG}" /tmp/checksums.txt --clobber
+
+      - name: Upload .app.zip assets to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.ref_name }}"
+          DIST="wails/build/bin"
+          gh release upload "${TAG}" \
+            "${DIST}/devproxy-darwin-arm64.app.zip" \
+            "${DIST}/devproxy-darwin-amd64.app.zip"
