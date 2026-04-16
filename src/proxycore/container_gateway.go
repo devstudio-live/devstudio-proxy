@@ -180,6 +180,18 @@ func (s *Server) handleContainerGateway(w http.ResponseWriter, r *http.Request) 
 	case "vm/stop":
 		s.handleVMStop(w, req)
 
+	// ── Multi-runtime unified view (Phase 4C) ──────────────────
+	case "multi/containers":
+		s.handleMultiContainers(w, req)
+	case "multi/images":
+		s.handleMultiImages(w, req)
+	case "multi/volumes":
+		s.handleMultiVolumes(w, req)
+	case "multi/networks":
+		s.handleMultiNetworks(w, req)
+	case "multi/summary":
+		s.handleMultiSummary(w, req)
+
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(ContainerResponse{Error: "unknown container endpoint: " + path})
