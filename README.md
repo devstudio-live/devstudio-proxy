@@ -2,6 +2,28 @@
 
 A lightweight HTTP/HTTPS forward proxy with transparent TLS passthrough and a multi-protocol database gateway (SQL, MongoDB, Elasticsearch, Redis). See [src/README.md](src/README.md) for full documentation.
 
+## Install (standalone)
+
+**macOS / Linux:**
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/devstudio-live/devstudio-proxy/main/scripts/install/install.sh | bash
+```
+
+**Windows (PowerShell):**
+
+```powershell
+irm https://raw.githubusercontent.com/devstudio-live/devstudio-proxy/main/scripts/install/install.ps1 | iex
+```
+
+The installer downloads the latest release binary, verifies its SHA256 checksum, and places it in `~/.local/bin` (Unix) or `%LOCALAPPDATA%\devstudio-proxy` (Windows). Pass `--help` (Unix) or `-?` (Windows) for options including custom install directories and auto-start service setup.
+
+To install with auto-start (macOS launchd / Linux systemd):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/devstudio-live/devstudio-proxy/main/scripts/install/install.sh | bash -s -- --service
+```
+
 ## Install via Homebrew
 
 ```sh
