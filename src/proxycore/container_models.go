@@ -59,10 +59,12 @@ type ContainerResponse struct {
 	Logs            string           `json:"logs,omitempty"`
 	ComposeProjects []ComposeProject `json:"composeProjects,omitempty"`
 	ComposeFile     string           `json:"composeFile,omitempty"`
-	Pods            []PodInfo        `json:"pods,omitempty"`
-	Pod             *PodDetail       `json:"pod,omitempty"`
-	VMs             []VMInfo         `json:"vms,omitempty"`
-	OK              bool             `json:"ok,omitempty"`
+	Pods            []PodInfo          `json:"pods,omitempty"`
+	Pod             *PodDetail         `json:"pod,omitempty"`
+	VMs             []VMInfo           `json:"vms,omitempty"`
+	BuildHistory    []BuildHistoryEntry `json:"buildHistory,omitempty"`
+	SharedImageIDs  []string           `json:"sharedImageIds,omitempty"`
+	OK              bool               `json:"ok,omitempty"`
 	Error           string           `json:"error,omitempty"`
 	DurationMs      float64          `json:"durationMs"`
 }
@@ -342,6 +344,21 @@ type VMInfo struct {
 	VMType      string `json:"vmType,omitempty"`       // virtualisation type (qemu, vz, wsl2, etc.)
 	Dir         string `json:"dir,omitempty"`          // VM instance directory
 	PID         int    `json:"pid,omitempty"`          // VM process ID (when running)
+}
+
+// BuildHistoryEntry represents a single layer entry from buildah history.
+type BuildHistoryEntry struct {
+	ID        string    `json:"id"`
+	Created   time.Time `json:"created"`
+	CreatedBy string    `json:"createdBy"`
+	Size      int64     `json:"size"`
+	Comment   string    `json:"comment,omitempty"`
+}
+
+// BuildahCapable is an optional interface implemented by adapters that support
+// buildah-specific operations (build history). Use type assertion to check support.
+type BuildahCapable interface {
+	BuildHistory(id string) ([]BuildHistoryEntry, error)
 }
 
 // PodCapable is an optional interface implemented by adapters that support

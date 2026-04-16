@@ -180,6 +180,14 @@ func (s *Server) handleContainerGateway(w http.ResponseWriter, r *http.Request) 
 	case "vm/stop":
 		s.handleVMStop(w, req)
 
+	// ── Buildah (Phase 5A) ─────────────────────────────────────
+	case "buildah/containers":
+		s.handleBuildahContainers(w, req)
+	case "buildah/history":
+		s.handleBuildahHistory(w, req)
+	case "buildah/shared-images":
+		s.handleBuildahSharedImages(w, req)
+
 	// ── Multi-runtime unified view (Phase 4C) ──────────────────
 	case "multi/containers":
 		s.handleMultiContainers(w, req)

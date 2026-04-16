@@ -3,6 +3,7 @@ package proxycore
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"os/exec"
 	"strings"
 	"time"
@@ -344,4 +345,158 @@ type buildahImageJSON struct {
 	Names     []string `json:"names"`
 	Size      int64    `json:"size"`
 	CreatedAt string   `json:"createdat"`
+}
+
+type buildahHistoryJSON struct {
+	ID        string `json:"id"`
+	Created   string `json:"created"`
+	CreatedBy string `json:"createdBy"`
+	Size      int64  `json:"size"`
+	Comment   string `json:"comment"`
+}
+
+// ── BuildahCapable implementation ──────────────────────────────────────────
+
+// BuildHistory returns the layer-by-layer build history for an image
+// via `buildah history --json`.
+func (b *BuildahAdapter) BuildHistory(id string) ([]BuildHistoryEntry, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	out, err := b.run(ctx, "history", "--json", id)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw []buildahHistoryJSON
+	if err := json.Unmarshal(out, &raw); err != nil {
+		return nil, err
+	}
+
+	entries := make([]BuildHistoryEntry, 0, len(raw))
+	for _, h := range raw {
+		created := time.Time{}
+		if h.Created != "" {
+			if t, err := time.Parse(time.RFC3339Nano, h.Created); err == nil {
+				created = t
+			}
+		}
+		entries = append(entries, BuildHistoryEntry{
+			ID:        truncateID(h.ID),
+			Created:   created,
+			CreatedBy: h.CreatedBy,
+			Size:      h.Size,
+			Comment:   h.Comment,
+		})
+	}
+	return entries, nil
+}
+
+// ── Buildah gateway handlers (Phase 5A) ───────────────────────────────────
+
+// handleBuildahContainers lists buildah working containers (used during image builds).
+func (s *Server) handleBuildahContainers(w http.ResponseWriter, req ContainerRequest) {
+	t0 := time.Now()
+
+	// Force buildah runtime
+	req.Runtime = "buildah"
+	adapter, err := s.resolveContainerAdapter(req)
+	if err != nil {
+		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
+		return
+	}
+
+	containers, err := adapter.ListContainers(req.Filters)
+	if err != nil {
+		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
+		return
+	}
+
+	json.NewEncoder(w).Encode(ContainerResponse{Containers: containers, DurationMs: ms(t0)})
+}
+
+// handleBuildahHistory returns the build history for a given image.
+func (s *Server) handleBuildahHistory(w http.ResponseWriter, req ContainerRequest) {
+	t0 := time.Now()
+
+	if req.ID == "" && req.Name == "" {
+		json.NewEncoder(w).Encode(ContainerResponse{Error: "id or name is required", DurationMs: ms(t0)})
+		return
+	}
+
+	req.Runtime = "buildah"
+	adapter, err := s.resolveContainerAdapter(req)
+	if err != nil {
+		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
+		return
+	}
+
+	bh, ok := adapter.(BuildahCapable)
+	if !ok {
+		json.NewEncoder(w).Encode(ContainerResponse{
+			Error:      "build history not supported by " + adapter.Name(),
+			DurationMs: ms(t0),
+		})
+		return
+	}
+
+	target := req.ID
+	if target == "" {
+		target = req.Name
+	}
+
+	history, err := bh.BuildHistory(target)
+	if err != nil {
+		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
+		return
+	}
+
+	json.NewEncoder(w).Encode(ContainerResponse{BuildHistory: history, DurationMs: ms(t0)})
+}
+
+// handleBuildahSharedImages lists buildah images and identifies which are shared
+// with Podman (same container storage backend).
+func (s *Server) handleBuildahSharedImages(w http.ResponseWriter, req ContainerRequest) {
+	t0 := time.Now()
+
+	// Get buildah images
+	bReq := req
+	bReq.Runtime = "buildah"
+	buildahAdapter, err := s.resolveContainerAdapter(bReq)
+	if err != nil {
+		json.NewEncoder(w).Encode(ContainerResponse{Error: "buildah not available: " + err.Error(), DurationMs: ms(t0)})
+		return
+	}
+
+	buildahImages, err := buildahAdapter.ListImages(nil)
+	if err != nil {
+		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
+		return
+	}
+
+	// Try to get podman images for shared detection
+	var sharedIDs []string
+	pReq := req
+	pReq.Runtime = "podman"
+	podmanAdapter, podmanErr := s.resolveContainerAdapter(pReq)
+	if podmanErr == nil {
+		podmanImages, err := podmanAdapter.ListImages(nil)
+		if err == nil {
+			podmanIDSet := make(map[string]bool, len(podmanImages))
+			for _, img := range podmanImages {
+				podmanIDSet[img.ID] = true
+			}
+			for _, img := range buildahImages {
+				if podmanIDSet[img.ID] {
+					sharedIDs = append(sharedIDs, img.ID)
+				}
+			}
+		}
+	}
+
+	json.NewEncoder(w).Encode(ContainerResponse{
+		Images:         buildahImages,
+		SharedImageIDs: sharedIDs,
+		DurationMs:     ms(t0),
+	})
 }
