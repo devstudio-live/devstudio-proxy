@@ -31,6 +31,15 @@ WAILS_BIN = $(WAILS_DIR)/build/bin
 GOBIN     = $(shell go env GOPATH)/bin
 WAILS     = $(GOBIN)/wails
 
+# Ldflags for Wails builds — stamped with version info + BuildSource.
+# wails-app for macOS .app bundles, wails-exe for Linux/Windows single-file builds.
+WAILS_LDFLAGS_BASE = -s -w \
+  -X devstudio/proxy/proxycore.Version=$(VERSION) \
+  -X devstudio/proxy/proxycore.Commit=$(COMMIT) \
+  -X devstudio/proxy/proxycore.BuildDate=$(BUILD_DATE)
+WAILS_LDFLAGS_APP = $(WAILS_LDFLAGS_BASE) -X devstudio/proxy/proxycore.BuildSource=wails-app
+WAILS_LDFLAGS_EXE = $(WAILS_LDFLAGS_BASE) -X devstudio/proxy/proxycore.BuildSource=wails-exe
+
 .PHONY: all full clean test checksums wails-setup wails-mac wails-dev wails-full $(PLATFORMS_ALL)
 
 all: $(PLATFORMS_DARWIN) checksums
@@ -62,7 +71,7 @@ wails-setup: $(WAILS_DIR)/go.sum
 
 # macOS only: universal .app bundle + arch-split CLI binaries extracted via lipo
 wails-mac: wails-setup
-	cd $(WAILS_DIR) && $(WAILS) build -platform darwin/universal -clean
+	cd $(WAILS_DIR) && $(WAILS) build -platform darwin/universal -clean -ldflags "$(WAILS_LDFLAGS_APP)"
 	lipo $(WAILS_BIN)/devproxy.app/Contents/MacOS/devproxy \
 		-extract arm64  -output $(WAILS_BIN)/devproxy-darwin-arm64
 	lipo $(WAILS_BIN)/devproxy.app/Contents/MacOS/devproxy \
@@ -74,11 +83,11 @@ wails-dev: wails-mac
 
 # All platforms: macOS (as above) + Windows + Linux
 wails-full: wails-mac
-	cd $(WAILS_DIR) && $(WAILS) build -platform windows/amd64
+	cd $(WAILS_DIR) && $(WAILS) build -platform windows/amd64 -ldflags "$(WAILS_LDFLAGS_EXE)"
 	cp $(WAILS_BIN)/devproxy.exe $(WAILS_BIN)/devproxy-windows-amd64.exe
-	cd $(WAILS_DIR) && $(WAILS) build -platform windows/arm64
+	cd $(WAILS_DIR) && $(WAILS) build -platform windows/arm64 -ldflags "$(WAILS_LDFLAGS_EXE)"
 	cp $(WAILS_BIN)/devproxy.exe $(WAILS_BIN)/devproxy-windows-arm64.exe
-	cd $(WAILS_DIR) && $(WAILS) build -platform linux/amd64
+	cd $(WAILS_DIR) && $(WAILS) build -platform linux/amd64 -ldflags "$(WAILS_LDFLAGS_EXE)"
 	cp $(WAILS_BIN)/devproxy     $(WAILS_BIN)/devproxy-linux-amd64
-	cd $(WAILS_DIR) && $(WAILS) build -platform linux/arm64
+	cd $(WAILS_DIR) && $(WAILS) build -platform linux/arm64 -ldflags "$(WAILS_LDFLAGS_EXE)"
 	cp $(WAILS_BIN)/devproxy     $(WAILS_BIN)/devproxy-linux-arm64
