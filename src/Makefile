@@ -1,7 +1,14 @@
 BINARY  = devproxy
 DIST    = dist
-VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
-LDFLAGS = -ldflags="-s -w -X main.Version=$(VERSION)"
+VERSION      ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT       ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "unknown")
+BUILD_DATE   ?= $(shell date -u +%FT%TZ)
+BUILD_SOURCE ?= source
+LDFLAGS = -ldflags="-s -w \
+  -X devstudio/proxy/proxycore.Version=$(VERSION) \
+  -X devstudio/proxy/proxycore.Commit=$(COMMIT) \
+  -X devstudio/proxy/proxycore.BuildDate=$(BUILD_DATE) \
+  -X devstudio/proxy/proxycore.BuildSource=$(BUILD_SOURCE)"
 
 PLATFORMS_DARWIN = \
 	darwin/amd64  \

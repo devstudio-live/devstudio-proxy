@@ -59,6 +59,9 @@ func main() {
 
 	srv.Start(*mcpRefresh)
 
+	// Non-blocking version check on startup — populates the update cache.
+	go proxycore.BackgroundUpdateCheck()
+
 	// ── Restart loop ──────────────────────────────────────────────────────────
 	for {
 		loopCfg, _ := proxycore.LoadConfig()

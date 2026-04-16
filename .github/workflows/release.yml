@@ -35,12 +35,13 @@ jobs:
         working-directory: src
         run: go mod download
 
-      # TEMP: using `make all` (Mac-only) instead of `make full` (all platforms) to save build time
       - name: Build all platforms
         working-directory: src
         run: |
           VERSION="${{ github.ref_name }}"
-          make all VERSION="${VERSION}"
+          COMMIT="${{ github.sha }}"
+          BUILD_DATE="$(date -u +%FT%TZ)"
+          make full VERSION="${VERSION}" COMMIT="${COMMIT:0:7}" BUILD_DATE="${BUILD_DATE}" BUILD_SOURCE=release
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
@@ -71,11 +72,12 @@ jobs:
 
           update_sha devproxy-darwin-arm64
           update_sha devproxy-darwin-amd64
-          # TEMP: Linux builds disabled — only Mac binaries built via `make all`
-          # update_sha devproxy-linux-arm64
-          # update_sha devproxy-linux-arm
-          # update_sha devproxy-linux-amd64
-          # update_sha devproxy-linux-386
+          update_sha devproxy-linux-arm64
+          update_sha devproxy-linux-arm
+          update_sha devproxy-linux-amd64
+          update_sha devproxy-linux-386
+          update_sha devproxy-windows-amd64.exe
+          update_sha devproxy-windows-arm64.exe
 
       - name: Commit updated formula
         run: |

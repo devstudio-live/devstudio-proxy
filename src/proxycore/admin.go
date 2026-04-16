@@ -39,6 +39,8 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		s.adminTrafficStats(w, r)
 	case r.URL.Path == "/admin/internals" && r.Method == http.MethodGet:
 		s.adminInternals(w, r)
+	case r.URL.Path == "/admin/update/check" && r.Method == http.MethodGet:
+		s.adminUpdateCheck(w, r)
 	default:
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
@@ -54,16 +56,21 @@ func (s *Server) adminGetConfig(w http.ResponseWriter, r *http.Request) {
 		certTrusted = err == nil
 	}
 	persistedCfg, _ := LoadConfig()
+	resp := map[string]interface{}{
+		"port":             s.AdminPort,
+		"log":              s.LogEnabled.Load(),
+		"verbose":          s.VerboseEnabled.Load(),
+		"tls":              s.TLSAvailable,
+		"https_enabled":    persistedCfg.HTTPS,
+		"cert_trusted":     certTrusted,
+		"firefox_trusted":  FirefoxPolicyInstalled(),
+		"update_available": CachedUpdateAvailable(),
+	}
+	for k, v := range VersionInfo() {
+		resp[k] = v
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{ //nolint:errcheck
-		"port":            s.AdminPort,
-		"log":             s.LogEnabled.Load(),
-		"verbose":         s.VerboseEnabled.Load(),
-		"tls":             s.TLSAvailable,
-		"https_enabled":   persistedCfg.HTTPS,
-		"cert_trusted":    certTrusted,
-		"firefox_trusted": FirefoxPolicyInstalled(),
-	})
+	json.NewEncoder(w).Encode(resp) //nolint:errcheck
 }
 
 func (s *Server) adminTrustCert(w http.ResponseWriter, r *http.Request) {
@@ -335,6 +342,18 @@ func (s *Server) adminTrafficStats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	json.NewEncoder(w).Encode(s.TrafficBuf.Stats()) //nolint:errcheck
+}
+
+func (s *Server) adminUpdateCheck(w http.ResponseWriter, r *http.Request) {
+	force := r.URL.Query().Get("force") == "1"
+	info, err := CheckForUpdate(r.Context(), force)
+	w.Header().Set("Content-Type", "application/json")
+	if err != nil {
+		w.WriteHeader(http.StatusBadGateway)
+		json.NewEncoder(w).Encode(map[string]string{"error": err.Error()}) //nolint:errcheck
+		return
+	}
+	json.NewEncoder(w).Encode(info) //nolint:errcheck
 }
 
 func (s *Server) adminInternals(w http.ResponseWriter, r *http.Request) {
