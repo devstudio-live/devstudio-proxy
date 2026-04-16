@@ -41,6 +41,10 @@ func (s *Server) handleAdmin(w http.ResponseWriter, r *http.Request) {
 		s.adminInternals(w, r)
 	case r.URL.Path == "/admin/update/check" && r.Method == http.MethodGet:
 		s.adminUpdateCheck(w, r)
+	case r.URL.Path == "/admin/update/apply" && r.Method == http.MethodPost:
+		s.adminUpdateApply(w, r)
+	case r.URL.Path == "/admin/update/status" && r.Method == http.MethodGet:
+		s.adminUpdateStatus(w, r)
 	default:
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusNotFound)
