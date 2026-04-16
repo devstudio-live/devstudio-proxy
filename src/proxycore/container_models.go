@@ -17,20 +17,33 @@ type ContainerRequest struct {
 	ConnectionMode string            `json:"connectionMode,omitempty"` // "local" | "ssh" | "remote-tcp"
 	SSHConnection  *SSHConnection    `json:"sshConnection,omitempty"`
 	RemoteHost     string            `json:"remoteHost,omitempty"`     // tcp://host:2376
+
+	// Phase 2 — write operations
+	Timeout  int               `json:"timeout,omitempty"`  // stop/restart timeout in seconds
+	Force    bool              `json:"force,omitempty"`    // force remove
+	Ref      string            `json:"ref,omitempty"`      // image reference for pull (e.g. "nginx:latest")
+	Target   string            `json:"target,omitempty"`   // target reference for image tag
+	Driver   string            `json:"driver,omitempty"`   // driver for volume/network create
+	Options  map[string]string `json:"options,omitempty"`  // driver options for volume/network create
+	Dangling bool              `json:"dangling,omitempty"` // prune only dangling images
 }
 
 // ContainerResponse is the unified response body for all container gateway endpoints.
 type ContainerResponse struct {
-	Containers []ContainerInfo `json:"containers,omitempty"`
-	Images     []ImageInfo     `json:"images,omitempty"`
-	Volumes    []VolumeInfo    `json:"volumes,omitempty"`
-	Networks   []NetworkInfo   `json:"networks,omitempty"`
+	Containers []ContainerInfo  `json:"containers,omitempty"`
+	Images     []ImageInfo      `json:"images,omitempty"`
+	Volumes    []VolumeInfo     `json:"volumes,omitempty"`
+	Networks   []NetworkInfo    `json:"networks,omitempty"`
 	Container  *ContainerDetail `json:"container,omitempty"`
-	Image      *ImageDetail    `json:"image,omitempty"`
-	Runtimes   []RuntimeInfo   `json:"runtimes,omitempty"`
-	System     *SystemInfo     `json:"system,omitempty"`
-	Error      string          `json:"error,omitempty"`
-	DurationMs float64         `json:"durationMs"`
+	Image      *ImageDetail     `json:"image,omitempty"`
+	Volume     *VolumeInfo      `json:"volume,omitempty"`
+	Network    *NetworkInfo     `json:"network,omitempty"`
+	Runtimes   []RuntimeInfo    `json:"runtimes,omitempty"`
+	System     *SystemInfo      `json:"system,omitempty"`
+	Prune      *PruneResult     `json:"prune,omitempty"`
+	OK         bool             `json:"ok,omitempty"`
+	Error      string           `json:"error,omitempty"`
+	DurationMs float64          `json:"durationMs"`
 }
 
 // ── Unified data models ─────────────────────────────────────────────────────
@@ -202,11 +215,34 @@ type SystemInfo struct {
 	SecurityOptions []string `json:"securityOptions,omitempty"`
 }
 
+// PruneResult summarizes the outcome of a prune (cleanup) operation.
+type PruneResult struct {
+	ItemsDeleted []string `json:"itemsDeleted,omitempty"`
+	SpaceFreed   int64    `json:"spaceFreed"` // bytes
+}
+
+// ContainerStats holds a single stats snapshot for a running container.
+type ContainerStats struct {
+	ID            string  `json:"id"`
+	Name          string  `json:"name"`
+	CPUPercent    float64 `json:"cpuPercent"`
+	MemoryUsage   int64   `json:"memoryUsage"`   // bytes
+	MemoryLimit   int64   `json:"memoryLimit"`   // bytes
+	MemoryPercent float64 `json:"memoryPercent"`
+	NetInput      int64   `json:"netInput"`      // bytes
+	NetOutput     int64   `json:"netOutput"`     // bytes
+	BlockInput    int64   `json:"blockInput"`    // bytes
+	BlockOutput   int64   `json:"blockOutput"`   // bytes
+	PIDs          int     `json:"pids"`
+	Timestamp     int64   `json:"timestamp"`     // unix ms
+}
+
 // ── Adapter interface ───────────────────────────────────────────────────────
 
 // ContainerAdapter is implemented by each runtime backend (docker, podman,
-// nerdctl, crictl, buildah). Phase 1A exposes only read operations.
+// nerdctl, crictl, buildah).
 type ContainerAdapter interface {
+	// Read operations (Phase 1A)
 	Name() string
 	Detect() (*RuntimeInfo, error)
 	ListContainers(filters map[string]string) ([]ContainerInfo, error)
@@ -216,4 +252,28 @@ type ContainerAdapter interface {
 	ListVolumes() ([]VolumeInfo, error)
 	ListNetworks() ([]NetworkInfo, error)
 	SystemInfo() (*SystemInfo, error)
+
+	// Write operations — container lifecycle (Phase 2A)
+	StartContainer(id string) error
+	StopContainer(id string, timeout int) error
+	RestartContainer(id string, timeout int) error
+	RemoveContainer(id string, force bool) error
+	PauseContainer(id string) error
+	UnpauseContainer(id string) error
+
+	// Write operations — images (Phase 2A)
+	PullImage(ref string) error
+	RemoveImage(id string, force bool) error
+	PruneImages(dangling bool) (*PruneResult, error)
+	TagImage(source, target string) error
+
+	// Write operations — volumes (Phase 2A)
+	CreateVolume(name string, driver string, opts map[string]string) (*VolumeInfo, error)
+	RemoveVolume(name string, force bool) error
+	PruneVolumes() (*PruneResult, error)
+
+	// Write operations — networks (Phase 2A)
+	CreateNetwork(name string, driver string, opts map[string]string) (*NetworkInfo, error)
+	RemoveNetwork(id string) error
+	PruneNetworks() (*PruneResult, error)
 }

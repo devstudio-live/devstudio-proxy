@@ -200,6 +200,90 @@ func (b *BuildahAdapter) InspectImage(id string) (*ImageDetail, error) {
 	return detail, nil
 }
 
+// ── Container lifecycle (Phase 2A) — limited for buildah ───────────────────
+
+func (b *BuildahAdapter) StartContainer(_ string) error {
+	return &containerError{msg: "buildah does not support starting containers"}
+}
+
+func (b *BuildahAdapter) StopContainer(_ string, _ int) error {
+	return &containerError{msg: "buildah does not support stopping containers"}
+}
+
+func (b *BuildahAdapter) RestartContainer(_ string, _ int) error {
+	return &containerError{msg: "buildah does not support restarting containers"}
+}
+
+func (b *BuildahAdapter) RemoveContainer(id string, _ bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	_, err := b.run(ctx, "rm", id)
+	return err
+}
+
+func (b *BuildahAdapter) PauseContainer(_ string) error {
+	return &containerError{msg: "buildah does not support pause"}
+}
+
+func (b *BuildahAdapter) UnpauseContainer(_ string) error {
+	return &containerError{msg: "buildah does not support unpause"}
+}
+
+// ── Image write operations (Phase 2A) ──────────────────────────────────────
+
+func (b *BuildahAdapter) PullImage(ref string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	_, err := b.run(ctx, "pull", ref)
+	return err
+}
+
+func (b *BuildahAdapter) RemoveImage(id string, _ bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	_, err := b.run(ctx, "rmi", id)
+	return err
+}
+
+func (b *BuildahAdapter) PruneImages(_ bool) (*PruneResult, error) {
+	return &PruneResult{}, &containerError{msg: "buildah does not support image prune"}
+}
+
+func (b *BuildahAdapter) TagImage(source, target string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	_, err := b.run(ctx, "tag", source, target)
+	return err
+}
+
+// ── Volume write operations (Phase 2A) — not supported ─────────────────────
+
+func (b *BuildahAdapter) CreateVolume(_, _ string, _ map[string]string) (*VolumeInfo, error) {
+	return nil, &containerError{msg: "buildah does not support volume management"}
+}
+
+func (b *BuildahAdapter) RemoveVolume(_ string, _ bool) error {
+	return &containerError{msg: "buildah does not support volume management"}
+}
+
+func (b *BuildahAdapter) PruneVolumes() (*PruneResult, error) {
+	return nil, &containerError{msg: "buildah does not support volume management"}
+}
+
+// ── Network write operations (Phase 2A) — not supported ────────────────────
+
+func (b *BuildahAdapter) CreateNetwork(_ string, _ string, _ map[string]string) (*NetworkInfo, error) {
+	return nil, &containerError{msg: "buildah does not support network management"}
+}
+
+func (b *BuildahAdapter) RemoveNetwork(_ string) error {
+	return &containerError{msg: "buildah does not support network management"}
+}
+
+func (b *BuildahAdapter) PruneNetworks() (*PruneResult, error) {
+	return nil, &containerError{msg: "buildah does not support network management"}
+}
+
 // ── Volumes (not supported by buildah) ──────────────────────────────────────
 
 func (b *BuildahAdapter) ListVolumes() ([]VolumeInfo, error) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -218,6 +219,101 @@ func (c *CrictlAdapter) InspectImage(id string) (*ImageDetail, error) {
 	}
 
 	return detail, nil
+}
+
+// ── Container lifecycle (Phase 2A) ─────────────────────────────────────────
+
+func (c *CrictlAdapter) StartContainer(id string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	_, err := c.run(ctx, "start", id)
+	return err
+}
+
+func (c *CrictlAdapter) StopContainer(id string, timeout int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout+10)*time.Second)
+	defer cancel()
+	_, err := c.run(ctx, "stop", "--timeout", strconv.Itoa(timeout), id)
+	return err
+}
+
+func (c *CrictlAdapter) RestartContainer(id string, timeout int) error {
+	// crictl has no restart; stop then start
+	if err := c.StopContainer(id, timeout); err != nil {
+		return err
+	}
+	return c.StartContainer(id)
+}
+
+func (c *CrictlAdapter) RemoveContainer(id string, force bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	args := []string{"rm", id}
+	if force {
+		args = []string{"rm", "-f", id}
+	}
+	_, err := c.run(ctx, args...)
+	return err
+}
+
+func (c *CrictlAdapter) PauseContainer(_ string) error {
+	return &containerError{msg: "crictl does not support pause"}
+}
+
+func (c *CrictlAdapter) UnpauseContainer(_ string) error {
+	return &containerError{msg: "crictl does not support unpause"}
+}
+
+// ── Image write operations (Phase 2A) ──────────────────────────────────────
+
+func (c *CrictlAdapter) PullImage(ref string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	_, err := c.run(ctx, "pull", ref)
+	return err
+}
+
+func (c *CrictlAdapter) RemoveImage(id string, _ bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	_, err := c.run(ctx, "rmi", id)
+	return err
+}
+
+func (c *CrictlAdapter) PruneImages(_ bool) (*PruneResult, error) {
+	return &PruneResult{}, &containerError{msg: "crictl does not support image prune"}
+}
+
+func (c *CrictlAdapter) TagImage(_, _ string) error {
+	return &containerError{msg: "crictl does not support image tagging"}
+}
+
+// ── Volume write operations (Phase 2A) — not supported ─────────────────────
+
+func (c *CrictlAdapter) CreateVolume(_, _ string, _ map[string]string) (*VolumeInfo, error) {
+	return nil, &containerError{msg: "crictl does not support volume management"}
+}
+
+func (c *CrictlAdapter) RemoveVolume(_ string, _ bool) error {
+	return &containerError{msg: "crictl does not support volume management"}
+}
+
+func (c *CrictlAdapter) PruneVolumes() (*PruneResult, error) {
+	return nil, &containerError{msg: "crictl does not support volume management"}
+}
+
+// ── Network write operations (Phase 2A) — not supported ────────────────────
+
+func (c *CrictlAdapter) CreateNetwork(_ string, _ string, _ map[string]string) (*NetworkInfo, error) {
+	return nil, &containerError{msg: "crictl does not support network management"}
+}
+
+func (c *CrictlAdapter) RemoveNetwork(_ string) error {
+	return &containerError{msg: "crictl does not support network management"}
+}
+
+func (c *CrictlAdapter) PruneNetworks() (*PruneResult, error) {
+	return nil, &containerError{msg: "crictl does not support network management"}
 }
 
 // ── Volumes (not supported by crictl) ───────────────────────────────────────

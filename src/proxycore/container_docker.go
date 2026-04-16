@@ -1,6 +1,7 @@
 package proxycore
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -74,6 +75,71 @@ func (d *DockerAdapter) get(ctx context.Context, path string) ([]byte, error) {
 	}
 
 	return body, nil
+}
+
+func (d *DockerAdapter) post(ctx context.Context, path string, body []byte) ([]byte, error) {
+	var reqBody io.Reader
+	if body != nil {
+		reqBody = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, d.apiURL(path), reqBody)
+	if err != nil {
+		return nil, err
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode >= 400 {
+		var errResp struct {
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(respBody, &errResp) == nil && errResp.Message != "" {
+			return nil, &containerError{msg: errResp.Message}
+		}
+		return nil, &containerError{msg: fmt.Sprintf("API error %d: %s", resp.StatusCode, string(respBody))}
+	}
+
+	return respBody, nil
+}
+
+func (d *DockerAdapter) delete(ctx context.Context, path string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, d.apiURL(path), nil)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := d.client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode >= 400 {
+		var errResp struct {
+			Message string `json:"message"`
+		}
+		if json.Unmarshal(respBody, &errResp) == nil && errResp.Message != "" {
+			return nil, &containerError{msg: errResp.Message}
+		}
+		return nil, &containerError{msg: fmt.Sprintf("API error %d: %s", resp.StatusCode, string(respBody))}
+	}
+
+	return respBody, nil
 }
 
 // ── Detect ──────────────────────────────────────────────────────────────────
@@ -311,6 +377,234 @@ func (d *DockerAdapter) SystemInfo() (*SystemInfo, error) {
 		CPUs:            raw.NCPU,
 		SecurityOptions: raw.SecurityOptions,
 	}, nil
+}
+
+// ── Container lifecycle (Phase 2A) ─────────────────────────────────────────
+
+func (d *DockerAdapter) StartContainer(id string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	_, err := d.post(ctx, "/containers/"+id+"/start", nil)
+	return err
+}
+
+func (d *DockerAdapter) StopContainer(id string, timeout int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout+10)*time.Second)
+	defer cancel()
+	path := fmt.Sprintf("/containers/%s/stop?t=%d", id, timeout)
+	_, err := d.post(ctx, path, nil)
+	return err
+}
+
+func (d *DockerAdapter) RestartContainer(id string, timeout int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout+10)*time.Second)
+	defer cancel()
+	path := fmt.Sprintf("/containers/%s/restart?t=%d", id, timeout)
+	_, err := d.post(ctx, path, nil)
+	return err
+}
+
+func (d *DockerAdapter) RemoveContainer(id string, force bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	path := fmt.Sprintf("/containers/%s?force=%t", id, force)
+	_, err := d.delete(ctx, path)
+	return err
+}
+
+func (d *DockerAdapter) PauseContainer(id string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	_, err := d.post(ctx, "/containers/"+id+"/pause", nil)
+	return err
+}
+
+func (d *DockerAdapter) UnpauseContainer(id string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	_, err := d.post(ctx, "/containers/"+id+"/unpause", nil)
+	return err
+}
+
+// ── Image write operations (Phase 2A) ──────────────────────────────────────
+
+func (d *DockerAdapter) PullImage(ref string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	// POST /images/create?fromImage=ref — reads full body to wait for completion
+	path := "/images/create?fromImage=" + ref
+	_, err := d.post(ctx, path, nil)
+	return err
+}
+
+func (d *DockerAdapter) RemoveImage(id string, force bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	path := fmt.Sprintf("/images/%s?force=%t", id, force)
+	_, err := d.delete(ctx, path)
+	return err
+}
+
+func (d *DockerAdapter) PruneImages(dangling bool) (*PruneResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	path := "/images/prune"
+	if dangling {
+		fb, _ := json.Marshal(map[string][]string{"dangling": {"true"}})
+		path += "?filters=" + string(fb)
+	}
+
+	body, err := d.post(ctx, path, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw struct {
+		ImagesDeleted []struct {
+			Untagged string `json:"Untagged"`
+			Deleted  string `json:"Deleted"`
+		} `json:"ImagesDeleted"`
+		SpaceReclaimed int64 `json:"SpaceReclaimed"`
+	}
+	json.Unmarshal(body, &raw)
+
+	result := &PruneResult{SpaceFreed: raw.SpaceReclaimed}
+	for _, img := range raw.ImagesDeleted {
+		if img.Deleted != "" {
+			result.ItemsDeleted = append(result.ItemsDeleted, img.Deleted)
+		} else if img.Untagged != "" {
+			result.ItemsDeleted = append(result.ItemsDeleted, img.Untagged)
+		}
+	}
+	return result, nil
+}
+
+func (d *DockerAdapter) TagImage(source, target string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+
+	repo, tag := splitRepoTag(target)
+	path := fmt.Sprintf("/images/%s/tag?repo=%s&tag=%s", source, repo, tag)
+	_, err := d.post(ctx, path, nil)
+	return err
+}
+
+// ── Volume write operations (Phase 2A) ─────────────────────────────────────
+
+func (d *DockerAdapter) CreateVolume(name string, driver string, opts map[string]string) (*VolumeInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+
+	payload := map[string]any{"Name": name}
+	if driver != "" {
+		payload["Driver"] = driver
+	}
+	if len(opts) > 0 {
+		payload["DriverOpts"] = opts
+	}
+	reqBody, _ := json.Marshal(payload)
+
+	body, err := d.post(ctx, "/volumes/create", reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw dockerVolumeJSON
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return nil, err
+	}
+
+	vol := d.normalizeVolume(raw)
+	return &vol, nil
+}
+
+func (d *DockerAdapter) RemoveVolume(name string, force bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	path := fmt.Sprintf("/volumes/%s?force=%t", name, force)
+	_, err := d.delete(ctx, path)
+	return err
+}
+
+func (d *DockerAdapter) PruneVolumes() (*PruneResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	body, err := d.post(ctx, "/volumes/prune", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw struct {
+		VolumesDeleted []string `json:"VolumesDeleted"`
+		SpaceReclaimed int64    `json:"SpaceReclaimed"`
+	}
+	json.Unmarshal(body, &raw)
+
+	return &PruneResult{ItemsDeleted: raw.VolumesDeleted, SpaceFreed: raw.SpaceReclaimed}, nil
+}
+
+// ── Network write operations (Phase 2A) ────────────────────────────────────
+
+func (d *DockerAdapter) CreateNetwork(name string, driver string, opts map[string]string) (*NetworkInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+
+	payload := map[string]any{"Name": name, "CheckDuplicate": true}
+	if driver != "" {
+		payload["Driver"] = driver
+	}
+	if len(opts) > 0 {
+		payload["Options"] = opts
+	}
+	reqBody, _ := json.Marshal(payload)
+
+	body, err := d.post(ctx, "/networks/create", reqBody)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw struct {
+		ID string `json:"Id"`
+	}
+	json.Unmarshal(body, &raw)
+
+	// Fetch full network info
+	netBody, err := d.get(ctx, "/networks/"+raw.ID)
+	if err != nil {
+		return &NetworkInfo{ID: truncateID(raw.ID), Name: name, Driver: driver, Runtime: d.runtimeName}, nil
+	}
+	var netRaw dockerNetworkJSON
+	if err := json.Unmarshal(netBody, &netRaw); err != nil {
+		return &NetworkInfo{ID: truncateID(raw.ID), Name: name, Driver: driver, Runtime: d.runtimeName}, nil
+	}
+	net := d.normalizeNetwork(netRaw)
+	return &net, nil
+}
+
+func (d *DockerAdapter) RemoveNetwork(id string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	_, err := d.delete(ctx, "/networks/"+id)
+	return err
+}
+
+func (d *DockerAdapter) PruneNetworks() (*PruneResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	body, err := d.post(ctx, "/networks/prune", nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var raw struct {
+		NetworksDeleted []string `json:"NetworksDeleted"`
+	}
+	json.Unmarshal(body, &raw)
+
+	return &PruneResult{ItemsDeleted: raw.NetworksDeleted}, nil
 }
 
 // ── Docker API JSON models (internal) ───────────────────────────────────────

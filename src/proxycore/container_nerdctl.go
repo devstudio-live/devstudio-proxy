@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -300,6 +301,178 @@ func (n *NerdctlAdapter) SystemInfo() (*SystemInfo, error) {
 		Arch:          getStr(raw, "Architecture"),
 		KernelVersion: getStr(raw, "KernelVersion"),
 	}, nil
+}
+
+// ── Container lifecycle (Phase 2A) ─────────────────────────────────────────
+
+func (n *NerdctlAdapter) StartContainer(id string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	_, err := n.run(ctx, "start", id)
+	return err
+}
+
+func (n *NerdctlAdapter) StopContainer(id string, timeout int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout+10)*time.Second)
+	defer cancel()
+	_, err := n.run(ctx, "stop", "-t", strconv.Itoa(timeout), id)
+	return err
+}
+
+func (n *NerdctlAdapter) RestartContainer(id string, timeout int) error {
+	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(timeout+10)*time.Second)
+	defer cancel()
+	_, err := n.run(ctx, "restart", "-t", strconv.Itoa(timeout), id)
+	return err
+}
+
+func (n *NerdctlAdapter) RemoveContainer(id string, force bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	args := []string{"rm", id}
+	if force {
+		args = []string{"rm", "-f", id}
+	}
+	_, err := n.run(ctx, args...)
+	return err
+}
+
+func (n *NerdctlAdapter) PauseContainer(id string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	_, err := n.run(ctx, "pause", id)
+	return err
+}
+
+func (n *NerdctlAdapter) UnpauseContainer(id string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	_, err := n.run(ctx, "unpause", id)
+	return err
+}
+
+// ── Image write operations (Phase 2A) ──────────────────────────────────────
+
+func (n *NerdctlAdapter) PullImage(ref string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+	_, err := n.run(ctx, "pull", ref)
+	return err
+}
+
+func (n *NerdctlAdapter) RemoveImage(id string, force bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	args := []string{"rmi", id}
+	if force {
+		args = []string{"rmi", "-f", id}
+	}
+	_, err := n.run(ctx, args...)
+	return err
+}
+
+func (n *NerdctlAdapter) PruneImages(dangling bool) (*PruneResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	// nerdctl image prune -f (force to skip confirmation)
+	out, err := n.run(ctx, "image", "prune", "-f")
+	if err != nil {
+		return nil, err
+	}
+	deleted := parseDeletedLines(string(out))
+	return &PruneResult{ItemsDeleted: deleted}, nil
+}
+
+func (n *NerdctlAdapter) TagImage(source, target string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	_, err := n.run(ctx, "tag", source, target)
+	return err
+}
+
+// ── Volume write operations (Phase 2A) ─────────────────────────────────────
+
+func (n *NerdctlAdapter) CreateVolume(name string, driver string, _ map[string]string) (*VolumeInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	args := []string{"volume", "create", name}
+	if driver != "" {
+		args = []string{"volume", "create", "--driver", driver, name}
+	}
+	_, err := n.run(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	return &VolumeInfo{Name: name, Driver: driver, Runtime: n.runtimeName, Size: -1}, nil
+}
+
+func (n *NerdctlAdapter) RemoveVolume(name string, force bool) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	args := []string{"volume", "rm", name}
+	if force {
+		args = []string{"volume", "rm", "-f", name}
+	}
+	_, err := n.run(ctx, args...)
+	return err
+}
+
+func (n *NerdctlAdapter) PruneVolumes() (*PruneResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	out, err := n.run(ctx, "volume", "prune", "-f")
+	if err != nil {
+		return nil, err
+	}
+	deleted := parseDeletedLines(string(out))
+	return &PruneResult{ItemsDeleted: deleted}, nil
+}
+
+// ── Network write operations (Phase 2A) ────────────────────────────────────
+
+func (n *NerdctlAdapter) CreateNetwork(name string, driver string, _ map[string]string) (*NetworkInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	args := []string{"network", "create", name}
+	if driver != "" {
+		args = []string{"network", "create", "--driver", driver, name}
+	}
+	out, err := n.run(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	netID := strings.TrimSpace(string(out))
+	return &NetworkInfo{ID: truncateID(netID), Name: name, Driver: driver, Runtime: n.runtimeName}, nil
+}
+
+func (n *NerdctlAdapter) RemoveNetwork(id string) error {
+	ctx, cancel := context.WithTimeout(context.Background(), containerTimeout)
+	defer cancel()
+	_, err := n.run(ctx, "network", "rm", id)
+	return err
+}
+
+func (n *NerdctlAdapter) PruneNetworks() (*PruneResult, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+	out, err := n.run(ctx, "network", "prune", "-f")
+	if err != nil {
+		return nil, err
+	}
+	deleted := parseDeletedLines(string(out))
+	return &PruneResult{ItemsDeleted: deleted}, nil
+}
+
+// parseDeletedLines extracts non-empty lines from CLI prune output (typically IDs or names).
+func parseDeletedLines(output string) []string {
+	var items []string
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		line = strings.TrimSpace(line)
+		if line != "" && !strings.HasPrefix(line, "Total") && !strings.HasPrefix(line, "Deleted") {
+			items = append(items, line)
+		}
+	}
+	return items
 }
 
 // ── Normalization helpers ───────────────────────────────────────────────────
