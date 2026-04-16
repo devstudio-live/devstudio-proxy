@@ -138,6 +138,40 @@ func (s *Server) handleContainerGateway(w http.ResponseWriter, r *http.Request) 
 	case "compose/start":
 		s.handleComposeAction(w, req, "start")
 
+	// ── Pods (Phase 3A) ─────────────────────────────────────────
+	case "pods":
+		s.handlePodList(w, req)
+	case "pod":
+		s.handlePodInspect(w, req)
+	case "pod/start":
+		s.handlePodAction(w, req, func(a PodCapable, id string) error {
+			return a.StartPod(id)
+		})
+	case "pod/stop":
+		s.handlePodAction(w, req, func(a PodCapable, id string) error {
+			timeout := req.Timeout
+			if timeout <= 0 {
+				timeout = 10
+			}
+			return a.StopPod(id, timeout)
+		})
+	case "pod/restart":
+		s.handlePodAction(w, req, func(a PodCapable, id string) error {
+			return a.RestartPod(id)
+		})
+	case "pod/remove":
+		s.handlePodAction(w, req, func(a PodCapable, id string) error {
+			return a.RemovePod(id, req.Force)
+		})
+	case "pod/pause":
+		s.handlePodAction(w, req, func(a PodCapable, id string) error {
+			return a.PausePod(id)
+		})
+	case "pod/unpause":
+		s.handlePodAction(w, req, func(a PodCapable, id string) error {
+			return a.UnpausePod(id)
+		})
+
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(ContainerResponse{Error: "unknown container endpoint: " + path})

@@ -51,6 +51,8 @@ type ContainerResponse struct {
 	Logs            string           `json:"logs,omitempty"`
 	ComposeProjects []ComposeProject `json:"composeProjects,omitempty"`
 	ComposeFile     string           `json:"composeFile,omitempty"`
+	Pods            []PodInfo        `json:"pods,omitempty"`
+	Pod             *PodDetail       `json:"pod,omitempty"`
 	OK              bool             `json:"ok,omitempty"`
 	Error           string           `json:"error,omitempty"`
 	DurationMs      float64          `json:"durationMs"`
@@ -275,6 +277,56 @@ type ComposeService struct {
 	ServiceNum   int       `json:"serviceNum,omitempty"` // com.docker.compose.container-number
 	DependsOn    []string  `json:"dependsOn,omitempty"`
 	Created      time.Time `json:"created"`
+}
+
+// ── Pod models (Phase 3A) ───────────────────────────────────────────────────
+
+// PodInfo is the normalized pod summary returned by runtimes that support
+// pods natively (Podman, CRI-O/crictl).
+type PodInfo struct {
+	ID         string              `json:"id"`
+	Name       string              `json:"name"`
+	Status     string              `json:"status"` // Running|Paused|Stopped|Created|Dead|Degraded
+	Created    time.Time           `json:"created"`
+	Labels     map[string]string   `json:"labels,omitempty"`
+	Containers []PodContainerInfo  `json:"containers"`
+	Running    int                 `json:"running"`
+	Paused     int                 `json:"paused"`
+	Stopped    int                 `json:"stopped"`
+	Total      int                 `json:"total"`
+	Runtime    string              `json:"runtime"`
+	InfraID    string              `json:"infraId,omitempty"`
+	Networks   []string            `json:"networks,omitempty"`
+	Namespace  string              `json:"namespace,omitempty"` // CRI namespace
+}
+
+// PodContainerInfo is a brief summary of a container within a pod.
+type PodContainerInfo struct {
+	ID     string `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
+}
+
+// PodDetail is the full inspect output for a single pod.
+type PodDetail struct {
+	PodInfo
+	CgroupPath       string         `json:"cgroupPath,omitempty"`
+	Hostname         string         `json:"hostname,omitempty"`
+	SharedNamespaces []string       `json:"sharedNamespaces,omitempty"`
+	Raw              map[string]any `json:"raw,omitempty"`
+}
+
+// PodCapable is an optional interface implemented by adapters that support
+// pod management (Podman, crictl). Use type assertion to check support.
+type PodCapable interface {
+	ListPods(filters map[string]string) ([]PodInfo, error)
+	InspectPod(id string) (*PodDetail, error)
+	StartPod(id string) error
+	StopPod(id string, timeout int) error
+	RestartPod(id string) error
+	RemovePod(id string, force bool) error
+	PausePod(id string) error
+	UnpausePod(id string) error
 }
 
 // ── Adapter interface ───────────────────────────────────────────────────────
