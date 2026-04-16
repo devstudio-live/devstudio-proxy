@@ -36,6 +36,11 @@ type ContainerRequest struct {
 
 	// Phase 4A — VM management
 	VMType string `json:"vmType,omitempty"` // lima|colima|finch|rancher-desktop (for vm/start, vm/stop)
+
+	// Phase 4B — TLS for remote TCP connections
+	TLSCACert string `json:"tlsCACert,omitempty"` // PEM-encoded CA certificate
+	TLSCert   string `json:"tlsCert,omitempty"`   // PEM-encoded client certificate
+	TLSKey    string `json:"tlsKey,omitempty"`     // PEM-encoded client private key
 }
 
 // ContainerResponse is the unified response body for all container gateway endpoints.

@@ -19,6 +19,7 @@ type DockerAdapter struct {
 	socketPath  string
 	runtimeName string // "docker" or "podman"
 	client      *http.Client
+	apiScheme   string // "http" or "https"; empty defaults to "http" (Phase 4B)
 }
 
 const dockerAPIVersion = "v1.43"
@@ -44,7 +45,11 @@ func NewDockerAdapter(socketPath string, runtimeName string) *DockerAdapter {
 func (d *DockerAdapter) Name() string { return d.runtimeName }
 
 func (d *DockerAdapter) apiURL(path string) string {
-	return fmt.Sprintf("http://localhost/%s%s", dockerAPIVersion, path)
+	scheme := d.apiScheme
+	if scheme == "" {
+		scheme = "http"
+	}
+	return fmt.Sprintf("%s://localhost/%s%s", scheme, dockerAPIVersion, path)
 }
 
 func (d *DockerAdapter) get(ctx context.Context, path string) ([]byte, error) {

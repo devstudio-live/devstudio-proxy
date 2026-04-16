@@ -21,7 +21,7 @@ import (
 func (s *Server) handlePodList(w http.ResponseWriter, req ContainerRequest) {
 	t0 := time.Now()
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -54,7 +54,7 @@ func (s *Server) handlePodInspect(w http.ResponseWriter, req ContainerRequest) {
 		return
 	}
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -92,7 +92,7 @@ func (s *Server) handlePodAction(w http.ResponseWriter, req ContainerRequest, ac
 		return
 	}
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return

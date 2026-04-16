@@ -188,9 +188,13 @@ func (s *Server) handleContainerGateway(w http.ResponseWriter, r *http.Request) 
 
 // ── /detect — list available runtimes ───────────────────────────────────────
 
-func (s *Server) handleContainerDetect(w http.ResponseWriter, _ ContainerRequest) {
+func (s *Server) handleContainerDetect(w http.ResponseWriter, req ContainerRequest) {
 	t0 := time.Now()
-	runtimes := DetectRuntimes()
+	runtimes, err := s.detectRemoteRuntimes(req)
+	if err != nil {
+		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
+		return
+	}
 	json.NewEncoder(w).Encode(ContainerResponse{Runtimes: runtimes, DurationMs: ms(t0)})
 }
 
@@ -199,7 +203,7 @@ func (s *Server) handleContainerDetect(w http.ResponseWriter, _ ContainerRequest
 func (s *Server) handleContainerList(w http.ResponseWriter, req ContainerRequest) {
 	t0 := time.Now()
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -233,7 +237,7 @@ func (s *Server) handleContainerInspect(w http.ResponseWriter, req ContainerRequ
 		return
 	}
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -258,7 +262,7 @@ func (s *Server) handleContainerInspect(w http.ResponseWriter, req ContainerRequ
 func (s *Server) handleImageList(w http.ResponseWriter, req ContainerRequest) {
 	t0 := time.Now()
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -292,7 +296,7 @@ func (s *Server) handleImageInspect(w http.ResponseWriter, req ContainerRequest)
 		return
 	}
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -317,7 +321,7 @@ func (s *Server) handleImageInspect(w http.ResponseWriter, req ContainerRequest)
 func (s *Server) handleVolumeList(w http.ResponseWriter, req ContainerRequest) {
 	t0 := time.Now()
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -337,7 +341,7 @@ func (s *Server) handleVolumeList(w http.ResponseWriter, req ContainerRequest) {
 func (s *Server) handleNetworkList(w http.ResponseWriter, req ContainerRequest) {
 	t0 := time.Now()
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -357,7 +361,7 @@ func (s *Server) handleNetworkList(w http.ResponseWriter, req ContainerRequest) 
 func (s *Server) handleContainerSystemInfo(w http.ResponseWriter, req ContainerRequest) {
 	t0 := time.Now()
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -384,7 +388,7 @@ func (s *Server) handleContainerAction(w http.ResponseWriter, req ContainerReque
 		return
 	}
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -413,7 +417,7 @@ func (s *Server) handleImagePull(w http.ResponseWriter, req ContainerRequest) {
 		return
 	}
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -435,7 +439,7 @@ func (s *Server) handleImageRemove(w http.ResponseWriter, req ContainerRequest) 
 		return
 	}
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -457,7 +461,7 @@ func (s *Server) handleImageRemove(w http.ResponseWriter, req ContainerRequest) 
 func (s *Server) handleImagePrune(w http.ResponseWriter, req ContainerRequest) {
 	t0 := time.Now()
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -488,7 +492,7 @@ func (s *Server) handleImageTag(w http.ResponseWriter, req ContainerRequest) {
 		return
 	}
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -512,7 +516,7 @@ func (s *Server) handleVolumeCreate(w http.ResponseWriter, req ContainerRequest)
 		return
 	}
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -535,7 +539,7 @@ func (s *Server) handleVolumeRemove(w http.ResponseWriter, req ContainerRequest)
 		return
 	}
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -557,7 +561,7 @@ func (s *Server) handleVolumeRemove(w http.ResponseWriter, req ContainerRequest)
 func (s *Server) handleVolumePrune(w http.ResponseWriter, req ContainerRequest) {
 	t0 := time.Now()
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -582,7 +586,7 @@ func (s *Server) handleNetworkCreate(w http.ResponseWriter, req ContainerRequest
 		return
 	}
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -605,7 +609,7 @@ func (s *Server) handleNetworkRemove(w http.ResponseWriter, req ContainerRequest
 		return
 	}
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -627,7 +631,7 @@ func (s *Server) handleNetworkRemove(w http.ResponseWriter, req ContainerRequest
 func (s *Server) handleNetworkPrune(w http.ResponseWriter, req ContainerRequest) {
 	t0 := time.Now()
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return

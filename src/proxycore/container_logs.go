@@ -20,7 +20,7 @@ func (s *Server) handleContainerLogs(w http.ResponseWriter, req ContainerRequest
 		return
 	}
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error(), DurationMs: ms(t0)})
 		return
@@ -65,7 +65,7 @@ func (s *Server) handleContainerLogStream(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error()})

@@ -20,7 +20,7 @@ func (s *Server) handleContainerStats(w http.ResponseWriter, r *http.Request, re
 		return
 	}
 
-	adapter, err := ResolveAdapter(req)
+	adapter, err := s.resolveContainerAdapter(req)
 	if err != nil {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(ContainerResponse{Error: err.Error()})
