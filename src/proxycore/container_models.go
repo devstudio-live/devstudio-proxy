@@ -26,6 +26,10 @@ type ContainerRequest struct {
 	Driver   string            `json:"driver,omitempty"`   // driver for volume/network create
 	Options  map[string]string `json:"options,omitempty"`  // driver options for volume/network create
 	Dangling bool              `json:"dangling,omitempty"` // prune only dangling images
+
+	// Phase 2B — logs
+	TailLines int   `json:"tailLines,omitempty"` // number of tail lines for logs
+	Follow    bool  `json:"follow,omitempty"`    // follow/stream logs
 }
 
 // ContainerResponse is the unified response body for all container gateway endpoints.
@@ -41,6 +45,7 @@ type ContainerResponse struct {
 	Runtimes   []RuntimeInfo    `json:"runtimes,omitempty"`
 	System     *SystemInfo      `json:"system,omitempty"`
 	Prune      *PruneResult     `json:"prune,omitempty"`
+	Logs       string           `json:"logs,omitempty"`
 	OK         bool             `json:"ok,omitempty"`
 	Error      string           `json:"error,omitempty"`
 	DurationMs float64          `json:"durationMs"`

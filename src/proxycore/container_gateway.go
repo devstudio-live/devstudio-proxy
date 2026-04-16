@@ -116,6 +116,12 @@ func (s *Server) handleContainerGateway(w http.ResponseWriter, r *http.Request) 
 	case "container/stats":
 		s.handleContainerStats(w, r, req)
 
+	// ── Logs (Phase 2B) ─────────────────────────────────────────
+	case "container/logs":
+		s.handleContainerLogs(w, req)
+	case "container/logs/stream":
+		s.handleContainerLogStream(w, r, req)
+
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(ContainerResponse{Error: "unknown container endpoint: " + path})
