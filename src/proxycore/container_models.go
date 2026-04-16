@@ -33,6 +33,9 @@ type ContainerRequest struct {
 
 	// Phase 2C — compose
 	Project string `json:"project,omitempty"` // compose project name for up/down/restart
+
+	// Phase 4A — VM management
+	VMType string `json:"vmType,omitempty"` // lima|colima|finch|rancher-desktop (for vm/start, vm/stop)
 }
 
 // ContainerResponse is the unified response body for all container gateway endpoints.
@@ -53,6 +56,7 @@ type ContainerResponse struct {
 	ComposeFile     string           `json:"composeFile,omitempty"`
 	Pods            []PodInfo        `json:"pods,omitempty"`
 	Pod             *PodDetail       `json:"pod,omitempty"`
+	VMs             []VMInfo         `json:"vms,omitempty"`
 	OK              bool             `json:"ok,omitempty"`
 	Error           string           `json:"error,omitempty"`
 	DurationMs      float64          `json:"durationMs"`
@@ -314,6 +318,25 @@ type PodDetail struct {
 	Hostname         string         `json:"hostname,omitempty"`
 	SharedNamespaces []string       `json:"sharedNamespaces,omitempty"`
 	Raw              map[string]any `json:"raw,omitempty"`
+}
+
+// ── VM models (Phase 4A) ───────────────────────────────────────────────────
+
+// VMInfo describes a VM-backed container runtime (Lima, Colima, Finch, Rancher Desktop).
+type VMInfo struct {
+	Name        string `json:"name"`                  // instance name (e.g. "default", "colima")
+	Type        string `json:"type"`                  // lima|colima|finch|rancher-desktop
+	DisplayName string `json:"displayName"`           // e.g. "Colima (default)"
+	Status      string `json:"status"`                // Running|Stopped|Unknown
+	CPUs        int    `json:"cpus,omitempty"`         // allocated CPUs
+	Memory      int64  `json:"memory,omitempty"`       // allocated memory in bytes
+	Disk        int64  `json:"disk,omitempty"`          // allocated disk in bytes
+	Arch        string `json:"arch,omitempty"`          // x86_64|aarch64
+	Runtime     string `json:"runtime,omitempty"`      // container runtime inside the VM (docker, containerd, etc.)
+	MountType   string `json:"mountType,omitempty"`    // mount type (reverse-sshfs, virtiofs, 9p, etc.)
+	VMType      string `json:"vmType,omitempty"`       // virtualisation type (qemu, vz, wsl2, etc.)
+	Dir         string `json:"dir,omitempty"`          // VM instance directory
+	PID         int    `json:"pid,omitempty"`          // VM process ID (when running)
 }
 
 // PodCapable is an optional interface implemented by adapters that support

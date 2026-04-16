@@ -172,6 +172,14 @@ func (s *Server) handleContainerGateway(w http.ResponseWriter, r *http.Request) 
 			return a.UnpausePod(id)
 		})
 
+	// ── VMs (Phase 4A) ─────────────────────────────────────────
+	case "vms":
+		s.handleVMList(w, req)
+	case "vm/start":
+		s.handleVMStart(w, req)
+	case "vm/stop":
+		s.handleVMStop(w, req)
+
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(ContainerResponse{Error: "unknown container endpoint: " + path})
