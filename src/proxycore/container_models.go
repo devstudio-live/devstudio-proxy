@@ -64,6 +64,9 @@ type ContainerResponse struct {
 	VMs             []VMInfo           `json:"vms,omitempty"`
 	BuildHistory    []BuildHistoryEntry `json:"buildHistory,omitempty"`
 	SharedImageIDs  []string           `json:"sharedImageIds,omitempty"`
+	SecurityAudit   *SecurityAudit     `json:"securityAudit,omitempty"`
+	VulnScan        *VulnScanResult    `json:"vulnScan,omitempty"`
+	VulnScanners    []VulnScanResult   `json:"vulnScanners,omitempty"`
 	OK              bool               `json:"ok,omitempty"`
 	Error           string           `json:"error,omitempty"`
 	DurationMs      float64          `json:"durationMs"`
@@ -353,6 +356,67 @@ type BuildHistoryEntry struct {
 	CreatedBy string    `json:"createdBy"`
 	Size      int64     `json:"size"`
 	Comment   string    `json:"comment,omitempty"`
+}
+
+// ── Security models (Phase 5B) ─────────────────────────────────────────────
+
+// SecurityProfile describes the security posture of a single container,
+// extracted from the container inspect data.
+type SecurityProfile struct {
+	ContainerID   string   `json:"containerId"`
+	ContainerName string   `json:"containerName"`
+	Image         string   `json:"image"`
+	State         string   `json:"state"`
+	Privileged    bool     `json:"privileged"`
+	RunAsRoot     bool     `json:"runAsRoot"`           // true when User is empty or "0" or "root"
+	ReadOnlyFS    bool     `json:"readOnlyFs"`           // read-only root filesystem
+	CapAdd        []string `json:"capAdd,omitempty"`     // added capabilities
+	CapDrop       []string `json:"capDrop,omitempty"`    // dropped capabilities
+	SeccompProfile string  `json:"seccompProfile,omitempty"` // e.g. "default", "unconfined"
+	AppArmorProfile string `json:"appArmorProfile,omitempty"`
+	SELinuxLabel   string  `json:"seLinuxLabel,omitempty"`
+	PidMode       string   `json:"pidMode,omitempty"`   // e.g. "host"
+	NetworkMode   string   `json:"networkMode,omitempty"` // e.g. "host", "bridge"
+	IpcMode       string   `json:"ipcMode,omitempty"`   // e.g. "host"
+	UsernsMode    string   `json:"usernsMode,omitempty"` // e.g. "host"
+	ExposedPorts  []PortBinding `json:"exposedPorts,omitempty"` // host-bound ports
+	Runtime       string   `json:"runtime"`
+}
+
+// SecurityAudit aggregates security data across all containers for a runtime.
+type SecurityAudit struct {
+	Profiles       []SecurityProfile `json:"profiles"`
+	RuntimeMode    string            `json:"runtimeMode"`    // "rootless" or "rootful"
+	SecurityOptions []string         `json:"securityOptions,omitempty"` // from system info
+}
+
+// VulnScanResult holds vulnerability scan results from docker scout or grype.
+type VulnScanResult struct {
+	Scanner    string       `json:"scanner"`              // "docker-scout" | "grype" | "trivy"
+	Available  bool         `json:"available"`             // whether the scanner was found
+	ImageRef   string       `json:"imageRef,omitempty"`
+	Summary    *VulnSummary `json:"summary,omitempty"`
+	Vulns      []VulnEntry  `json:"vulns,omitempty"`
+	Error      string       `json:"error,omitempty"`
+}
+
+// VulnSummary summarises vulnerability counts by severity.
+type VulnSummary struct {
+	Critical int `json:"critical"`
+	High     int `json:"high"`
+	Medium   int `json:"medium"`
+	Low      int `json:"low"`
+	Total    int `json:"total"`
+}
+
+// VulnEntry is a single vulnerability record.
+type VulnEntry struct {
+	ID          string `json:"id"`          // CVE ID
+	Severity    string `json:"severity"`    // critical|high|medium|low
+	Package     string `json:"package"`
+	Version     string `json:"version,omitempty"`
+	FixedIn     string `json:"fixedIn,omitempty"`
+	Description string `json:"description,omitempty"`
 }
 
 // BuildahCapable is an optional interface implemented by adapters that support

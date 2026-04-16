@@ -188,6 +188,14 @@ func (s *Server) handleContainerGateway(w http.ResponseWriter, r *http.Request) 
 	case "buildah/shared-images":
 		s.handleBuildahSharedImages(w, req)
 
+	// ── Security & Compliance (Phase 5B) ──────────────────────
+	case "security/audit":
+		s.handleSecurityAudit(w, req)
+	case "security/scanners":
+		s.handleVulnScanners(w, req)
+	case "security/scan":
+		s.handleVulnScan(w, req)
+
 	// ── Multi-runtime unified view (Phase 4C) ──────────────────
 	case "multi/containers":
 		s.handleMultiContainers(w, req)
