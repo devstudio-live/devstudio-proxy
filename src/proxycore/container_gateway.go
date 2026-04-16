@@ -122,6 +122,22 @@ func (s *Server) handleContainerGateway(w http.ResponseWriter, r *http.Request) 
 	case "container/logs/stream":
 		s.handleContainerLogStream(w, r, req)
 
+	// ── Compose (Phase 2C) ──────────────────────────────────────
+	case "compose":
+		s.handleComposeList(w, req)
+	case "compose/file":
+		s.handleComposeFile(w, req)
+	case "compose/up":
+		s.handleComposeAction(w, req, "up")
+	case "compose/down":
+		s.handleComposeAction(w, req, "down")
+	case "compose/restart":
+		s.handleComposeAction(w, req, "restart")
+	case "compose/stop":
+		s.handleComposeAction(w, req, "stop")
+	case "compose/start":
+		s.handleComposeAction(w, req, "start")
+
 	default:
 		w.WriteHeader(http.StatusNotFound)
 		json.NewEncoder(w).Encode(ContainerResponse{Error: "unknown container endpoint: " + path})

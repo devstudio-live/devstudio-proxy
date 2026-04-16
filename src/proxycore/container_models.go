@@ -30,6 +30,9 @@ type ContainerRequest struct {
 	// Phase 2B — logs
 	TailLines int   `json:"tailLines,omitempty"` // number of tail lines for logs
 	Follow    bool  `json:"follow,omitempty"`    // follow/stream logs
+
+	// Phase 2C — compose
+	Project string `json:"project,omitempty"` // compose project name for up/down/restart
 }
 
 // ContainerResponse is the unified response body for all container gateway endpoints.
@@ -44,11 +47,13 @@ type ContainerResponse struct {
 	Network    *NetworkInfo     `json:"network,omitempty"`
 	Runtimes   []RuntimeInfo    `json:"runtimes,omitempty"`
 	System     *SystemInfo      `json:"system,omitempty"`
-	Prune      *PruneResult     `json:"prune,omitempty"`
-	Logs       string           `json:"logs,omitempty"`
-	OK         bool             `json:"ok,omitempty"`
-	Error      string           `json:"error,omitempty"`
-	DurationMs float64          `json:"durationMs"`
+	Prune           *PruneResult     `json:"prune,omitempty"`
+	Logs            string           `json:"logs,omitempty"`
+	ComposeProjects []ComposeProject `json:"composeProjects,omitempty"`
+	ComposeFile     string           `json:"composeFile,omitempty"`
+	OK              bool             `json:"ok,omitempty"`
+	Error           string           `json:"error,omitempty"`
+	DurationMs      float64          `json:"durationMs"`
 }
 
 // ── Unified data models ─────────────────────────────────────────────────────
@@ -240,6 +245,36 @@ type ContainerStats struct {
 	BlockOutput   int64   `json:"blockOutput"`   // bytes
 	PIDs          int     `json:"pids"`
 	Timestamp     int64   `json:"timestamp"`     // unix ms
+}
+
+// ── Compose models (Phase 2C) ───────────────────────────────────────────────
+
+// ComposeProject represents a Docker Compose / Podman Compose project
+// detected via container labels.
+type ComposeProject struct {
+	Name         string           `json:"name"`
+	Status       string           `json:"status"`       // running|partial|stopped
+	ConfigFile   string           `json:"configFile,omitempty"`
+	WorkingDir   string           `json:"workingDir,omitempty"`
+	Services     []ComposeService `json:"services"`
+	Running      int              `json:"running"`
+	Stopped      int              `json:"stopped"`
+	Total        int              `json:"total"`
+	Created      time.Time        `json:"created"`
+}
+
+// ComposeService represents a single service within a compose project.
+type ComposeService struct {
+	Name         string    `json:"name"`
+	ContainerID  string    `json:"containerId"`
+	Image        string    `json:"image"`
+	State        string    `json:"state"` // running|exited|paused|...
+	Status       string    `json:"status"`
+	Ports        []PortBinding `json:"ports,omitempty"`
+	ExitCode     int       `json:"exitCode,omitempty"`
+	ServiceNum   int       `json:"serviceNum,omitempty"` // com.docker.compose.container-number
+	DependsOn    []string  `json:"dependsOn,omitempty"`
+	Created      time.Time `json:"created"`
 }
 
 // ── Adapter interface ───────────────────────────────────────────────────────
