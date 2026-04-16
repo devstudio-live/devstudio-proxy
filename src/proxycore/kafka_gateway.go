@@ -1961,6 +1961,9 @@ func (s *Server) schemaRegistryRequest(conn KafkaConnection, method, path string
 	if base == "" {
 		return 0, nil, fmt.Errorf("schemaRegistryUrl is not configured on the connection")
 	}
+	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
+		base = "http://" + base
+	}
 
 	var reqBody io.Reader
 	if body != nil {

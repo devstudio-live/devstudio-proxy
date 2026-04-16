@@ -23,6 +23,9 @@ func (s *Server) connectRequest(conn KafkaConnection, method, path string, body 
 	if base == "" {
 		return 0, nil, fmt.Errorf("connectUrl is not configured on the connection")
 	}
+	if !strings.HasPrefix(base, "http://") && !strings.HasPrefix(base, "https://") {
+		base = "http://" + base
+	}
 
 	var reqBody io.Reader
 	if body != nil {
