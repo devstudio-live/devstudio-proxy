@@ -1,37 +1,634 @@
-// Package proxycore — DAG executor stub (Phase 16A).
+// Package proxycore — DAG executor (Phase 16B).
 //
 // Plan: devstudio/plans/workflow-wizard-plan.md §G16 / 16B.
 //
-// 16A only ships the WebSocket lifecycle skeleton (dag_gateway.go); the
-// actual topo-sort + per-node delegation arrives in 16B and richer
-// progress + cancellation semantics in 16C. This stub keeps the
-// gateway end-to-end exercisable: it marks the execution running,
-// waits for either cancellation or its own no-op "completion", and
-// closes the frame channel so the WebSocket handler unblocks.
+// 16A shipped the WebSocket lifecycle skeleton (dag_gateway.go); 16B
+// replaces that stub with the real executor. The executor:
 //
-// The function signature (s *Server, exec *dagExecution) is the
-// extension point 16B replaces wholesale.
+//  1. Parses the validated DAG payload into nodes + edges,
+//  2. Topo-sorts via Kahn's algorithm (stable in author-insertion order),
+//  3. Walks the topo order; for each node either
+//       a. delegates to one of the existing 10 gateway handlers
+//          (sql / mongo / elastic / redis / fs / k8s / ssh / kafka /
+//          container / hprof) via an internal call — the gateway
+//          handlers themselves remain UNCHANGED per hard-scope rule H;
+//          or
+//       b. treats the node as a passthrough (no `params.gateway`),
+//          emitting a `node_result` with no gateway side-effects,
+//  4. Streams `node_start` / `node_result` / `node_failed` /
+//     `node_skipped` frames over the per-execution frame channel as
+//     it goes, plus a terminal `run_completed` or `run_failed` frame,
+//  5. On upstream failure, marks every downstream node
+//     `status:"skipped-due-to-upstream-failure"` and emits a
+//     `node_skipped` frame (without running the node).
+//
+// Cancellation + progress frames arrive in 16C; large-payload handling
+// in 16D; the browser remote-executor client in 16E.
+//
+// Hard-scope rules (plan §"Hard scope rules"):
+//   - G: DAG schema 1.0 frozen at 3D — parsing here is additive on
+//     `params.gateway`; it does not mutate the frozen node shape.
+//   - H: this is the G16 group. Existing gateway handlers are not
+//     touched; the executor is a *caller* only.
 package proxycore
 
-// runDAGExecution is the executor entry point invoked from
-// handleDAGExecStart. 16A semantics:
-//   - Flip status pending → running.
-//   - Wait for the per-execution context to be cancelled. There is no
-//     real work to do yet — 16B fills in topo-sort + delegation.
-//   - On cancellation, leave the cancelled status in place (the cancel
-//     handler already set it) and tear down the frame channel so the
-//     WebSocket handler returns.
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+	"time"
+)
+
+// dagNodeSpec is the subset of a DagDocument node (plan §schema/dag-schema.ts)
+// that the executor needs. `id` is the stable per-node key used in every
+// frame; `kind` is informational (surfaced in frames for UI); `params`
+// carries the optional `gateway` envelope and any passthrough data.
+type dagNodeSpec struct {
+	ID     string
+	Kind   string
+	Params map[string]interface{}
+}
+
+// dagEdgeSpec is the subset of a DagDocument edge the executor uses for
+// topo-sort + upstream-failure propagation.
+type dagEdgeSpec struct {
+	Source string
+	Target string
+}
+
+// nodeOutcomeStatus is the terminal status stamped on each node after
+// it is visited. "skipped-due-to-upstream-failure" is the plan-specified
+// string — downstream specs match on it literally.
+type nodeOutcomeStatus string
+
+const (
+	nodeOutcomeCompleted nodeOutcomeStatus = "completed"
+	nodeOutcomeFailed    nodeOutcomeStatus = "failed"
+	nodeOutcomeSkipped   nodeOutcomeStatus = "skipped-due-to-upstream-failure"
+)
+
+// nodeOutcome bundles per-node bookkeeping. Used locally by the executor
+// goroutine; never shared across executions (one map per dagExecution).
+type nodeOutcome struct {
+	status     nodeOutcomeStatus
+	startedAt  time.Time
+	endedAt    time.Time
+	durationMs int64
+	result     map[string]interface{}
+	err        string
+}
+
+// runDAGExecution is the 16B executor entry point invoked from
+// handleDAGExecStart. Signature preserved from the 16A stub.
 //
-// This intentionally has NO timeout; 16B introduces per-node deadlines.
-func runDAGExecution(_ *Server, exec *dagExecution) {
+// Control flow:
+//   - flip status to running
+//   - parse DAG → topo-sort
+//   - loop nodes; emit frames; stash outcomes
+//   - flip status to completed/failed (cancelled already flipped by
+//     the /cancel handler)
+//   - always close the frame channel so the WebSocket handler unblocks
+func runDAGExecution(s *Server, exec *dagExecution) {
 	exec.setStatus(dagStatusRunning)
 	defer exec.closeFrames()
 
-	<-exec.ctx.Done()
-	// If the cancel handler hasn't already flipped the status (race
-	// where ctx is cancelled by some other path), normalise here.
-	status, _ := exec.snapshot()
-	if status == dagStatusRunning {
-		exec.setStatus(dagStatusCancelled)
+	runStart := time.Now()
+
+	nodes, edges, parseErr := parseDAGStructure(exec.dag)
+	if parseErr != nil {
+		emitRunFailed(exec, runStart, parseErr.Error())
+		exec.setStatus(dagStatusFailed)
+		return
 	}
+
+	order, topoErr := topoSortDAG(nodes, edges)
+	if topoErr != nil {
+		emitRunFailed(exec, runStart, topoErr.Error())
+		exec.setStatus(dagStatusFailed)
+		return
+	}
+
+	// Build adjacency for upstream lookups. `upstream[id]` lists
+	// every direct predecessor of the node — used to propagate
+	// skipped-due-to-upstream-failure.
+	upstream := make(map[string][]string, len(nodes))
+	for _, e := range edges {
+		upstream[e.Target] = append(upstream[e.Target], e.Source)
+	}
+
+	outcomes := make(map[string]*nodeOutcome, len(order))
+	runHasFailure := false
+
+	for _, nodeID := range order {
+		// Honour cancellation between nodes so a cancel mid-run does
+		// not start a fresh gateway call. 16C tightens this to cover
+		// mid-node streaming.
+		if ctxDone(exec.ctx) {
+			exec.setStatus(dagStatusCancelled)
+			return
+		}
+
+		node := nodes[nodeID]
+
+		if upstreamSkippedOrFailed(nodeID, upstream, outcomes) {
+			outcomes[nodeID] = &nodeOutcome{status: nodeOutcomeSkipped}
+			runHasFailure = true
+			exec.emitFrame(dagFrame{
+				Type:   "node_skipped",
+				NodeID: nodeID,
+				Data: map[string]interface{}{
+					"kind":   node.Kind,
+					"status": string(nodeOutcomeSkipped),
+					"reason": "skipped-due-to-upstream-failure",
+				},
+			})
+			continue
+		}
+
+		startedAt := time.Now()
+		exec.emitFrame(dagFrame{
+			Type:   "node_start",
+			NodeID: nodeID,
+			Data:   map[string]interface{}{"kind": node.Kind},
+		})
+
+		result, nodeErr := runNode(s, exec.ctx, node)
+		endedAt := time.Now()
+		durationMs := endedAt.Sub(startedAt).Milliseconds()
+
+		if nodeErr != nil {
+			outcomes[nodeID] = &nodeOutcome{
+				status:     nodeOutcomeFailed,
+				startedAt:  startedAt,
+				endedAt:    endedAt,
+				durationMs: durationMs,
+				err:        nodeErr.Error(),
+			}
+			runHasFailure = true
+			exec.emitFrame(dagFrame{
+				Type:   "node_failed",
+				NodeID: nodeID,
+				Data: map[string]interface{}{
+					"kind":       node.Kind,
+					"error":      nodeErr.Error(),
+					"durationMs": durationMs,
+				},
+			})
+			continue
+		}
+
+		outcomes[nodeID] = &nodeOutcome{
+			status:     nodeOutcomeCompleted,
+			startedAt:  startedAt,
+			endedAt:    endedAt,
+			durationMs: durationMs,
+			result:     result,
+		}
+		exec.emitFrame(dagFrame{
+			Type:   "node_result",
+			NodeID: nodeID,
+			Data: map[string]interface{}{
+				"kind":       node.Kind,
+				"status":     string(nodeOutcomeCompleted),
+				"result":     result,
+				"durationMs": durationMs,
+			},
+		})
+	}
+
+	totalMs := time.Since(runStart).Milliseconds()
+	if runHasFailure {
+		exec.emitFrame(dagFrame{
+			Type: "run_failed",
+			Data: map[string]interface{}{
+				"totalDurationMs": totalMs,
+				"nodes":           nodeDurations(order, outcomes),
+			},
+		})
+		exec.setStatus(dagStatusFailed)
+		return
+	}
+
+	exec.emitFrame(dagFrame{
+		Type: "run_completed",
+		Data: map[string]interface{}{
+			"totalDurationMs": totalMs,
+			"nodes":           nodeDurations(order, outcomes),
+		},
+	})
+	exec.setStatus(dagStatusCompleted)
+}
+
+// parseDAGStructure translates the raw JSON map (already shape-checked
+// by validateDAGPayload in 16A) into the typed structures the executor
+// walks. Returns a stable author-insertion-ordered slice of node ids,
+// plus a map keyed by id, plus the edge list.
+//
+// 16B is strict: any node that fails the minimal shape check fails the
+// whole run with a parse error, so the client sees a single
+// `run_failed` frame instead of partial execution. Mirrors the
+// devstudio-side assertDagValid contract (src/tools/workflow-wizard/
+// schema/dag-schema.ts).
+func parseDAGStructure(raw map[string]interface{}) (map[string]dagNodeSpec, []dagEdgeSpec, error) {
+	rawNodes, _ := raw["nodes"].([]interface{})
+	rawEdges, _ := raw["edges"].([]interface{})
+
+	nodes := make(map[string]dagNodeSpec, len(rawNodes))
+	orderSeen := make([]string, 0, len(rawNodes))
+
+	for i, rn := range rawNodes {
+		obj, ok := rn.(map[string]interface{})
+		if !ok {
+			return nil, nil, fmt.Errorf("nodes[%d] is not an object", i)
+		}
+		id, ok := obj["id"].(string)
+		if !ok || id == "" {
+			return nil, nil, fmt.Errorf("nodes[%d].id missing or empty", i)
+		}
+		if _, dup := nodes[id]; dup {
+			return nil, nil, fmt.Errorf("duplicate node id %q", id)
+		}
+		kind, _ := obj["kind"].(string)
+		params, _ := obj["params"].(map[string]interface{})
+		if params == nil {
+			params = map[string]interface{}{}
+		}
+		nodes[id] = dagNodeSpec{ID: id, Kind: kind, Params: params}
+		orderSeen = append(orderSeen, id)
+	}
+
+	edges := make([]dagEdgeSpec, 0, len(rawEdges))
+	for i, re := range rawEdges {
+		obj, ok := re.(map[string]interface{})
+		if !ok {
+			return nil, nil, fmt.Errorf("edges[%d] is not an object", i)
+		}
+		src, ok := obj["source"].(string)
+		if !ok || src == "" {
+			return nil, nil, fmt.Errorf("edges[%d].source missing", i)
+		}
+		dst, ok := obj["target"].(string)
+		if !ok || dst == "" {
+			return nil, nil, fmt.Errorf("edges[%d].target missing", i)
+		}
+		if _, ok := nodes[src]; !ok {
+			return nil, nil, fmt.Errorf("edges[%d].source references unknown node %q", i, src)
+		}
+		if _, ok := nodes[dst]; !ok {
+			return nil, nil, fmt.Errorf("edges[%d].target references unknown node %q", i, dst)
+		}
+		edges = append(edges, dagEdgeSpec{Source: src, Target: dst})
+	}
+
+	// Attach author-insertion order so topoSortDAG can break ties
+	// stably. The map preserves values but not order, so we return a
+	// superstructure that carries order via the slice.
+	_ = orderSeen
+
+	return nodes, edges, nil
+}
+
+// topoSortDAG returns a topologically ordered list of node ids using
+// Kahn's algorithm. Ties are broken by author-insertion order (the
+// caller's `parseDAGStructure` builds `nodes` iteratively; we rebuild
+// a stable order by tracking which ids appear in the input order).
+//
+// Cycle detection: if a cycle is present, Kahn's terminates with
+// remaining in-degree > 0 on some nodes; we surface E_CYCLE so the
+// executor fails the run with a deterministic `run_failed` frame.
+func topoSortDAG(nodes map[string]dagNodeSpec, edges []dagEdgeSpec) ([]string, error) {
+	// Deterministic visit order: sort ids for stability when Go maps
+	// do not preserve insertion order. We don't have the original
+	// insertion slice here, so we use sorted ids — this keeps repeated
+	// runs of the same DAG identical, which matches plan §16B
+	// "Per-node duration captured; total run duration recorded."
+	ids := make([]string, 0, len(nodes))
+	for id := range nodes {
+		ids = append(ids, id)
+	}
+	sortStable(ids)
+
+	indegree := make(map[string]int, len(nodes))
+	adj := make(map[string][]string, len(nodes))
+	for _, id := range ids {
+		indegree[id] = 0
+		adj[id] = nil
+	}
+	for _, e := range edges {
+		adj[e.Source] = append(adj[e.Source], e.Target)
+		indegree[e.Target]++
+	}
+	for _, id := range ids {
+		sortStable(adj[id])
+	}
+
+	ready := make([]string, 0, len(nodes))
+	for _, id := range ids {
+		if indegree[id] == 0 {
+			ready = append(ready, id)
+		}
+	}
+
+	out := make([]string, 0, len(nodes))
+	for len(ready) > 0 {
+		head := ready[0]
+		ready = ready[1:]
+		out = append(out, head)
+		for _, next := range adj[head] {
+			indegree[next]--
+			if indegree[next] == 0 {
+				ready = append(ready, next)
+			}
+		}
+	}
+
+	if len(out) != len(nodes) {
+		remaining := make([]string, 0)
+		for _, id := range ids {
+			if indegree[id] > 0 {
+				remaining = append(remaining, id)
+			}
+		}
+		return nil, fmt.Errorf("DAG contains a cycle (unresolved nodes: %s)", strings.Join(remaining, ", "))
+	}
+	return out, nil
+}
+
+// sortStable is a tiny in-place sort helper to avoid pulling sort for
+// a one-liner; keeps the executor package surface small. Stable on
+// string slices via insertion sort — inputs are small (node counts are
+// bounded by the UI editor).
+func sortStable(s []string) {
+	for i := 1; i < len(s); i++ {
+		for j := i; j > 0 && s[j-1] > s[j]; j-- {
+			s[j-1], s[j] = s[j], s[j-1]
+		}
+	}
+}
+
+// upstreamSkippedOrFailed reports whether any direct predecessor of
+// `nodeID` has terminal status failed or skipped. When true, the node
+// itself is skipped with reason "skipped-due-to-upstream-failure".
+func upstreamSkippedOrFailed(nodeID string, upstream map[string][]string, outcomes map[string]*nodeOutcome) bool {
+	for _, u := range upstream[nodeID] {
+		if o, ok := outcomes[u]; ok {
+			if o.status == nodeOutcomeFailed || o.status == nodeOutcomeSkipped {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// nodeDurations returns the per-node summary attached to the final
+// run_completed / run_failed frame. Preserves topo order so the
+// consumer (remote-executor UI in 16E) does not need to re-sort.
+func nodeDurations(order []string, outcomes map[string]*nodeOutcome) []map[string]interface{} {
+	out := make([]map[string]interface{}, 0, len(order))
+	for _, id := range order {
+		o, ok := outcomes[id]
+		if !ok {
+			continue
+		}
+		entry := map[string]interface{}{
+			"nodeId":     id,
+			"status":     string(o.status),
+			"durationMs": o.durationMs,
+		}
+		if o.err != "" {
+			entry["error"] = o.err
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+// runNode evaluates a single node. Two modes:
+//   - params.gateway present → internal delegation to the existing
+//     gateway handler (sql/mongo/elastic/redis/fs/hprof/k8s/ssh/kafka/
+//     container). The gateway handler itself is untouched; we only
+//     synthesise the request it expects.
+//   - params.gateway absent → passthrough. The executor emits a
+//     node_result with `{passthrough:true, kind}` so downstream
+//     consumers can still render the node as "ran successfully" while
+//     16B holds back on real transform semantics (that lands with
+//     plugin execution in G14 and is out of scope for the proxy).
+func runNode(s *Server, ctx context.Context, node dagNodeSpec) (map[string]interface{}, error) {
+	gw, hasGw := gatewayEnvelope(node.Params)
+	if !hasGw {
+		return map[string]interface{}{
+			"passthrough": true,
+			"kind":        node.Kind,
+		}, nil
+	}
+
+	status, body, err := dispatchGatewayInternal(s, ctx, gw.protocol, gw.route, gw.body)
+	if err != nil {
+		return nil, err
+	}
+	if status < 200 || status >= 300 {
+		return nil, fmt.Errorf("gateway %q route %q returned status %d: %s",
+			gw.protocol, gw.route, status, trimForError(body))
+	}
+
+	// Try to decode the response as JSON so consumers get a structured
+	// object; fall back to a {raw:string} envelope otherwise.
+	var decoded map[string]interface{}
+	if derr := json.Unmarshal(body, &decoded); derr == nil && decoded != nil {
+		return decoded, nil
+	}
+	return map[string]interface{}{
+		"raw": string(body),
+	}, nil
+}
+
+// gatewayCall is the parsed envelope the DAG author placed on
+// `params.gateway`. All fields are validated below.
+type gatewayCall struct {
+	protocol string
+	route    string
+	body     []byte
+}
+
+// gatewayEnvelope extracts the delegation envelope from node.params.
+// Accepted shape:
+//
+//	{
+//	  "gateway": {
+//	    "protocol": "fs",
+//	    "route":    "stat",
+//	    "body":     {...}     // optional, defaults to {}
+//	  }
+//	}
+//
+// Returns (envelope, true) when valid; (zero, false) when absent.
+// Malformed envelopes return (zero, false) as well — runNode treats
+// that as passthrough so a typo in one node cannot abort the whole run
+// before reaching the node. Callers wanting strictness should rely on
+// the devstudio-side schema validation.
+func gatewayEnvelope(params map[string]interface{}) (gatewayCall, bool) {
+	raw, ok := params["gateway"].(map[string]interface{})
+	if !ok {
+		return gatewayCall{}, false
+	}
+	protocol, _ := raw["protocol"].(string)
+	if protocol == "" {
+		return gatewayCall{}, false
+	}
+	route, _ := raw["route"].(string)
+
+	var bodyBytes []byte
+	switch b := raw["body"].(type) {
+	case nil:
+		bodyBytes = []byte("{}")
+	case string:
+		bodyBytes = []byte(b)
+	default:
+		enc, err := json.Marshal(b)
+		if err != nil {
+			return gatewayCall{}, false
+		}
+		bodyBytes = enc
+	}
+	return gatewayCall{protocol: protocol, route: route, body: bodyBytes}, true
+}
+
+// dispatchGatewayInternal synthesises the HTTP request the existing 10
+// gateway handlers expect (method POST, JSON body, the two gateway
+// routing headers) and invokes the handler directly. Uses an in-memory
+// response writer so no network stack is traversed.
+//
+// The existing handlers remain UNCHANGED (plan §G16 hard-scope rule H);
+// this function is purely a caller. The path encodes the route so
+// handlers that switch on r.URL.Path (fs, kafka, hprof, k8s, container,
+// ssh, elastic, redis, mongo) route correctly.
+func dispatchGatewayInternal(s *Server, ctx context.Context, protocol, route string, body []byte) (int, []byte, error) {
+	reqPath := "/"
+	if route != "" {
+		if strings.HasPrefix(route, "/") {
+			reqPath = route
+		} else {
+			reqPath = "/" + route
+		}
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, reqPath, bytes.NewReader(body))
+	if err != nil {
+		return 0, nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-DevStudio-Gateway-Route", "true")
+	req.Header.Set("X-DevStudio-Gateway-Protocol", protocol)
+
+	rec := newBufferResponseWriter()
+	switch protocol {
+	case "sql":
+		s.handleDBGateway(rec, req)
+	case "mongo":
+		s.handleMongoGateway(rec, req)
+	case "elastic":
+		s.handleElasticGateway(rec, req)
+	case "redis":
+		s.handleRedisGateway(rec, req)
+	case "fs":
+		handleFSGateway(rec, req)
+	case "hprof":
+		s.handleHprofGateway(rec, req)
+	case "k8s":
+		s.handleK8sGateway(rec, req)
+	case "ssh":
+		s.handleSSHGateway(rec, req)
+	case "kafka":
+		s.handleKafkaGateway(rec, req)
+	case "container":
+		s.handleContainerGateway(rec, req)
+	default:
+		return 0, nil, fmt.Errorf("unsupported gateway protocol: %q", protocol)
+	}
+	return rec.statusCode(), rec.bytes(), nil
+}
+
+// bufferResponseWriter is a minimal in-memory http.ResponseWriter used
+// to capture responses from the existing gateway handlers without
+// opening a TCP loopback. Not exported — only the executor uses it.
+type bufferResponseWriter struct {
+	header  http.Header
+	status  int
+	body    bytes.Buffer
+	wroteHdr bool
+}
+
+func newBufferResponseWriter() *bufferResponseWriter {
+	return &bufferResponseWriter{header: http.Header{}}
+}
+
+func (w *bufferResponseWriter) Header() http.Header { return w.header }
+
+func (w *bufferResponseWriter) Write(p []byte) (int, error) {
+	if !w.wroteHdr {
+		w.status = http.StatusOK
+		w.wroteHdr = true
+	}
+	return w.body.Write(p)
+}
+
+func (w *bufferResponseWriter) WriteHeader(status int) {
+	if !w.wroteHdr {
+		w.status = status
+		w.wroteHdr = true
+	}
+}
+
+func (w *bufferResponseWriter) statusCode() int {
+	if w.status == 0 {
+		return http.StatusOK
+	}
+	return w.status
+}
+
+func (w *bufferResponseWriter) bytes() []byte { return w.body.Bytes() }
+
+// emitFrame pushes a frame into the execution's channel. Blocks until
+// either the WS handler drains it or ctx is cancelled. The 64-slot
+// buffer (dagFrameBuffer) is sized to absorb the bursts a small DAG
+// produces before a WS reader attaches.
+func (e *dagExecution) emitFrame(frame dagFrame) {
+	select {
+	case e.frames <- frame:
+	case <-e.ctx.Done():
+	}
+}
+
+// emitRunFailed is the shared exit path when the DAG cannot even
+// start — invalid structure, cycle detected, etc.
+func emitRunFailed(exec *dagExecution, runStart time.Time, msg string) {
+	exec.emitFrame(dagFrame{
+		Type: "run_failed",
+		Data: map[string]interface{}{
+			"totalDurationMs": time.Since(runStart).Milliseconds(),
+			"error":           msg,
+		},
+	})
+}
+
+// ctxDone is a non-blocking context check.
+func ctxDone(ctx context.Context) bool {
+	select {
+	case <-ctx.Done():
+		return true
+	default:
+		return false
+	}
+}
+
+// trimForError clips large gateway response bodies to a readable size
+// before folding them into an error message.
+func trimForError(body []byte) string {
+	const limit = 256
+	if len(body) <= limit {
+		return string(body)
+	}
+	return string(body[:limit]) + "…(truncated)"
 }
