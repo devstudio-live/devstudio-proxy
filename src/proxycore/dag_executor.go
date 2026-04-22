@@ -180,6 +180,34 @@ func runDAGExecution(s *Server, exec *dagExecution) {
 			continue
 		}
 
+		// 16D — large-payload handling. If the serialised result
+		// exceeds dagLargeResultThreshold (1 MiB), stash it in the
+		// existing /mcp/context cache and emit {resultContextId,
+		// resultBytes} on the frame instead of embedding the bytes.
+		// A store failure above threshold surfaces as node_failed so
+		// the frame channel never carries an oversize opaque payload.
+		cachedID, cachedBytes, cacheErr := maybeStoreLargeResult(s, result)
+		if cacheErr != nil {
+			outcomes[nodeID] = &nodeOutcome{
+				status:     nodeOutcomeFailed,
+				startedAt:  startedAt,
+				endedAt:    endedAt,
+				durationMs: durationMs,
+				err:        cacheErr.Error(),
+			}
+			runHasFailure = true
+			exec.emitFrame(dagFrame{
+				Type:   "node_failed",
+				NodeID: nodeID,
+				Data: map[string]interface{}{
+					"kind":       node.Kind,
+					"error":      cacheErr.Error(),
+					"durationMs": durationMs,
+				},
+			})
+			continue
+		}
+
 		outcomes[nodeID] = &nodeOutcome{
 			status:     nodeOutcomeCompleted,
 			startedAt:  startedAt,
@@ -187,15 +215,22 @@ func runDAGExecution(s *Server, exec *dagExecution) {
 			durationMs: durationMs,
 			result:     result,
 		}
+		frameData := map[string]interface{}{
+			"kind":       node.Kind,
+			"status":     string(nodeOutcomeCompleted),
+			"durationMs": durationMs,
+		}
+		if cachedID != "" {
+			frameData["resultContextId"] = cachedID
+			frameData["resultBytes"] = cachedBytes
+			frameData["resultKind"] = dagResultContextKind
+		} else {
+			frameData["result"] = result
+		}
 		exec.emitFrame(dagFrame{
 			Type:   "node_result",
 			NodeID: nodeID,
-			Data: map[string]interface{}{
-				"kind":       node.Kind,
-				"status":     string(nodeOutcomeCompleted),
-				"result":     result,
-				"durationMs": durationMs,
-			},
+			Data:   frameData,
 		})
 	}
 

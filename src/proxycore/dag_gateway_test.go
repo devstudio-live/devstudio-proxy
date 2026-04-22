@@ -1384,3 +1384,408 @@ func TestDAGExecutor_ProgressFrameEnvelopeShape(t *testing.T) {
 	}
 }
 
+// ── Phase 16D — Large-payload handling via /mcp/context cache ─────────
+//
+// Plan: devstudio/plans/workflow-wizard-plan.md §G16 / 16D.
+// Acceptance:
+//   (i)   5MB JSON result triggers context-cache store; frame contains UUID.
+//   (ii)  Browser fetches via existing `GET /mcp/context/{uuid}` path.
+//   (iii) Cache hits don't re-store; TTL respected.
+
+// makeLargeResult builds a deterministic map whose JSON serialisation
+// is at least `targetBytes` long. The payload is a single string field
+// of known size so tests can round-trip byte counts precisely.
+func makeLargeResult(targetBytes int) map[string]interface{} {
+	if targetBytes < 64 {
+		targetBytes = 64
+	}
+	// The JSON envelope `{"kind":"dag-result-fixture","bulk":"…"}` is
+	// ~42 bytes; pad the bulk so total serialised size ≥ target.
+	pad := targetBytes - 42
+	if pad < 1 {
+		pad = 1
+	}
+	bulk := strings.Repeat("x", pad)
+	return map[string]interface{}{
+		"kind": "dag-result-fixture",
+		"bulk": bulk,
+	}
+}
+
+// Acceptance bullet (i) — unit-level: a 5 MiB JSON result goes through
+// the store path, returns a non-empty UUID, and the stored bytes equal
+// the original serialisation.
+func TestDAGLargePayload_FiveMBResultIsStoredUnderFreshUUID(t *testing.T) {
+	s := NewServer(Options{Port: 0})
+
+	result := makeLargeResult(5 * 1024 * 1024)
+	wantJSON, err := json.Marshal(result)
+	if err != nil {
+		t.Fatalf("marshal fixture: %v", err)
+	}
+	if len(wantJSON) <= dagLargeResultThreshold {
+		t.Fatalf("fixture smaller than threshold: %d <= %d", len(wantJSON), dagLargeResultThreshold)
+	}
+
+	id, bytesStored, storeErr := maybeStoreLargeResult(s, result)
+	if storeErr != nil {
+		t.Fatalf("unexpected store error: %v", storeErr)
+	}
+	if id == "" {
+		t.Fatal("expected non-empty UUID for >threshold payload")
+	}
+	if bytesStored != len(wantJSON) {
+		t.Fatalf("bytesStored=%d want %d", bytesStored, len(wantJSON))
+	}
+
+	got, kind, ok := s.LoadContext(id)
+	if !ok {
+		t.Fatal("expected LoadContext to return the stored entry")
+	}
+	if kind != dagResultContextKind {
+		t.Fatalf("kind=%q want %q", kind, dagResultContextKind)
+	}
+	if !bytes.Equal(got, wantJSON) {
+		t.Fatalf("stored bytes differ from marshalled input (len %d vs %d)", len(got), len(wantJSON))
+	}
+}
+
+// Threshold semantics — below-bound payloads are NOT stored.
+func TestDAGLargePayload_BelowThresholdReturnsEmptyUUID(t *testing.T) {
+	s := NewServer(Options{Port: 0})
+	id, n, err := maybeStoreLargeResult(s, map[string]interface{}{"hello": "world"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if id != "" || n != 0 {
+		t.Fatalf("expected ('',0,nil) for tiny payload; got (%q, %d)", id, n)
+	}
+}
+
+// Nil / empty edge case — must not panic, must not store.
+func TestDAGLargePayload_NilResultIsNoOp(t *testing.T) {
+	s := NewServer(Options{Port: 0})
+	id, n, err := maybeStoreLargeResult(s, nil)
+	if err != nil || id != "" || n != 0 {
+		t.Fatalf("nil result should be a no-op: id=%q n=%d err=%v", id, n, err)
+	}
+}
+
+// Acceptance bullet (iii) — cache hits don't re-store. Repeated stores
+// of identical bytes must return the SAME UUID and the underlying cache
+// entry count must increment exactly once.
+func TestDAGLargePayload_DedupReusesUUIDAcrossRepeatStores(t *testing.T) {
+	s := NewServer(Options{Port: 0})
+
+	// Use a large enough payload to exercise the real store path.
+	// 2 MiB is above the default 1 MiB threshold and well below the
+	// 10 MiB per-entry cap.
+	result := makeLargeResult(2 * 1024 * 1024)
+
+	id1, n1, err := maybeStoreLargeResult(s, result)
+	if err != nil || id1 == "" {
+		t.Fatalf("first store failed: id=%q n=%d err=%v", id1, n1, err)
+	}
+	countAfterFirst := s.contextCount.Load()
+	if countAfterFirst != 1 {
+		t.Fatalf("contextCount=%d after first store; want 1", countAfterFirst)
+	}
+
+	id2, n2, err := maybeStoreLargeResult(s, result)
+	if err != nil {
+		t.Fatalf("second store failed: %v", err)
+	}
+	if id2 != id1 {
+		t.Fatalf("dedup broken: second UUID=%q want=%q", id2, id1)
+	}
+	if n2 != n1 {
+		t.Fatalf("dedup bytes mismatch: %d vs %d", n2, n1)
+	}
+	if s.contextCount.Load() != 1 {
+		t.Fatalf("contextCount=%d after dedup hit; want 1 (re-store suppressed)",
+			s.contextCount.Load())
+	}
+
+	// Third call with an IDENTICAL but freshly-constructed map must also dedup:
+	// the dedup key is a content hash, not a pointer.
+	clone := makeLargeResult(2 * 1024 * 1024)
+	id3, _, err := maybeStoreLargeResult(s, clone)
+	if err != nil || id3 != id1 {
+		t.Fatalf("dedup on equal-but-distinct map failed: got %q err=%v", id3, err)
+	}
+	if s.contextCount.Load() != 1 {
+		t.Fatalf("contextCount=%d after equal-but-distinct dedup; want 1",
+			s.contextCount.Load())
+	}
+}
+
+// Acceptance bullet (iii) — TTL respected. A dedup pointer whose
+// target cache entry has expired must self-heal: the next store mints
+// a fresh UUID instead of handing back the stale one.
+func TestDAGLargePayload_DedupRespectsTTL(t *testing.T) {
+	s := NewServer(Options{Port: 0})
+
+	result := makeLargeResult(2 * 1024 * 1024)
+
+	id1, _, err := maybeStoreLargeResult(s, result)
+	if err != nil || id1 == "" {
+		t.Fatalf("first store failed: id=%q err=%v", id1, err)
+	}
+
+	// Age the cache entry past contextTTL. LoadContext's inline TTL
+	// check will then return !ok and delete the entry; the dedup
+	// pointer becomes a dangling reference that the helper must drop.
+	raw, ok := s.contextCache.Load(id1)
+	if !ok {
+		t.Fatalf("missing cache entry for UUID %q", id1)
+	}
+	entry := raw.(*contextEntry)
+	entry.createdAt = time.Now().Add(-2 * contextTTL)
+
+	// Sanity: LoadContext now reports expired.
+	if _, _, live := s.LoadContext(id1); live {
+		t.Fatal("expected TTL-aged entry to report not-live via LoadContext")
+	}
+
+	id2, _, err := maybeStoreLargeResult(s, result)
+	if err != nil {
+		t.Fatalf("post-TTL re-store failed: %v", err)
+	}
+	if id2 == "" {
+		t.Fatal("post-TTL re-store returned empty UUID")
+	}
+	if id2 == id1 {
+		t.Fatalf("expected fresh UUID after TTL expiry; got stale %q", id2)
+	}
+	// Fresh entry is live.
+	if _, _, live := s.LoadContext(id2); !live {
+		t.Fatal("fresh store should be live")
+	}
+}
+
+// Distinct content → distinct UUIDs (dedup isolation).
+func TestDAGLargePayload_DistinctPayloadsGetDistinctUUIDs(t *testing.T) {
+	s := NewServer(Options{Port: 0})
+
+	a := makeLargeResult(2 * 1024 * 1024)
+	b := makeLargeResult(2*1024*1024 + 17) // different bulk length → different bytes
+
+	idA, _, err := maybeStoreLargeResult(s, a)
+	if err != nil || idA == "" {
+		t.Fatalf("store A failed: %v / %q", err, idA)
+	}
+	idB, _, err := maybeStoreLargeResult(s, b)
+	if err != nil || idB == "" {
+		t.Fatalf("store B failed: %v / %q", err, idB)
+	}
+	if idA == idB {
+		t.Fatalf("distinct payloads collapsed to the same UUID: %q", idA)
+	}
+	if s.contextCount.Load() != 2 {
+		t.Fatalf("contextCount=%d want 2 (one per distinct payload)", s.contextCount.Load())
+	}
+}
+
+// Store-failure path — a payload above the context cache's 10 MiB
+// per-entry cap must surface as an error so runDAGExecution can emit
+// node_failed (rather than silently embedding an oversize result in
+// the frame channel).
+func TestDAGLargePayload_OverPerEntryCapReturnsError(t *testing.T) {
+	s := NewServer(Options{Port: 0})
+
+	// maxEntrySize is 10 MiB (context_cache.go). 11 MiB is over cap.
+	result := makeLargeResult(11 * 1024 * 1024)
+
+	id, n, err := maybeStoreLargeResult(s, result)
+	if err == nil {
+		t.Fatalf("expected error for oversize payload; got id=%q n=%d", id, n)
+	}
+	if id != "" || n != 0 {
+		t.Fatalf("expected ('',0,err) on store failure; got (%q, %d, %v)", id, n, err)
+	}
+	if !strings.Contains(err.Error(), "large-payload store failed") {
+		t.Fatalf("error should name the failing path; got %q", err.Error())
+	}
+	if s.contextCount.Load() != 0 {
+		t.Fatalf("contextCount=%d want 0 after failed store", s.contextCount.Load())
+	}
+}
+
+// ── Integration coverage: the 16D frame-shape contract ─────────────────
+//
+// These tests drive the full executor + WS pipeline. To keep them fast
+// and deterministic, `dagLargeResultThreshold` is temporarily lowered
+// so tiny passthrough payloads cross the bound (the same test-var
+// pattern 16C uses for `dagProgressMinInterval`).
+
+// withLoweredThreshold lowers the threshold for the duration of the
+// test body and restores it on cleanup. Centralised so both integration
+// tests use the identical dance.
+func withLoweredThreshold(t *testing.T, newThreshold int) {
+	t.Helper()
+	prev := dagLargeResultThreshold
+	dagLargeResultThreshold = newThreshold
+	t.Cleanup(func() { dagLargeResultThreshold = prev })
+}
+
+// Acceptance bullet (i) — integration: a >threshold node result yields
+// a node_result frame whose data carries `resultContextId` + `resultBytes`
+// + `resultKind`, and does NOT embed the raw `result` field.
+func TestDAGExecutor_LargeResultEmittedAsContextIdStub(t *testing.T) {
+	withLoweredThreshold(t, 8) // 8 bytes → any passthrough result crosses
+	_, hs := startDAGTestServer(t)
+
+	dag := `{
+		"schemaVersion":"1.0",
+		"nodes":[{"id":"n1","kind":"transform","params":{}}],
+		"edges":[]
+	}`
+
+	startResp := startDAGExecution(t, hs, dag)
+	conn := dialDAGStream(t, hs, startResp)
+	defer conn.Close()
+	frames := readDAGFramesUntilTerminal(t, conn, 3*time.Second)
+
+	var nodeResult map[string]interface{}
+	for _, f := range frames {
+		if ty, _ := f["type"].(string); ty == "node_result" && f["nodeId"] == "n1" {
+			nodeResult = f
+			break
+		}
+	}
+	if nodeResult == nil {
+		t.Fatalf("no node_result frame for n1: %+v", frames)
+	}
+
+	data, _ := nodeResult["data"].(map[string]interface{})
+	if data == nil {
+		t.Fatalf("node_result missing data: %+v", nodeResult)
+	}
+
+	// resultContextId must be a non-empty string.
+	uuid, _ := data["resultContextId"].(string)
+	if uuid == "" {
+		t.Fatalf("expected resultContextId on data: %+v", data)
+	}
+	// resultBytes must be a positive numeric.
+	n, _ := data["resultBytes"].(float64)
+	if n <= 0 {
+		t.Fatalf("expected positive resultBytes on data: %+v", data)
+	}
+	// resultKind stamps the cache entry category.
+	if data["resultKind"] != dagResultContextKind {
+		t.Fatalf("expected resultKind=%q; got %v", dagResultContextKind, data["resultKind"])
+	}
+	// Large-payload path must NOT embed `result` inline.
+	if _, has := data["result"]; has {
+		t.Fatalf("expected result field omitted on large payload; got %+v", data)
+	}
+	// Status field still present so downstream counters stay accurate.
+	if data["status"] != "completed" {
+		t.Fatalf("expected status=completed on data; got %v", data["status"])
+	}
+}
+
+// Acceptance bullet (ii) — browser fetches the UUID via the existing
+// GET /mcp/context/{uuid} endpoint. We drive the whole pipeline: start
+// DAG, collect the resultContextId off the frame, then HTTP GET the
+// cached entry and decode it.
+func TestDAGExecutor_LargeResultFetchableViaMcpContext(t *testing.T) {
+	withLoweredThreshold(t, 8)
+	_, hs := startDAGTestServer(t)
+
+	dag := `{
+		"schemaVersion":"1.0",
+		"nodes":[{"id":"p","kind":"probe","params":{}}],
+		"edges":[]
+	}`
+
+	startResp := startDAGExecution(t, hs, dag)
+	conn := dialDAGStream(t, hs, startResp)
+	defer conn.Close()
+	frames := readDAGFramesUntilTerminal(t, conn, 3*time.Second)
+
+	var uuid string
+	for _, f := range frames {
+		if ty, _ := f["type"].(string); ty == "node_result" {
+			if d, ok := f["data"].(map[string]interface{}); ok {
+				if s, _ := d["resultContextId"].(string); s != "" {
+					uuid = s
+					break
+				}
+			}
+		}
+	}
+	if uuid == "" {
+		t.Fatalf("no resultContextId captured from frames: %+v", frames)
+	}
+
+	resp, err := http.Get(hs.URL + "/mcp/context/" + uuid)
+	if err != nil {
+		t.Fatalf("GET /mcp/context: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("expected 200 from /mcp/context/%s; got %d: %s", uuid, resp.StatusCode, body)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read /mcp/context body: %v", err)
+	}
+	var decoded map[string]interface{}
+	if err := json.Unmarshal(body, &decoded); err != nil {
+		t.Fatalf("expected JSON body at /mcp/context/%s; got err=%v body=%q", uuid, err, body)
+	}
+	// The passthrough node returns {"passthrough":true,"kind":"probe"}.
+	if decoded["passthrough"] != true {
+		t.Fatalf("cached payload missing passthrough marker: %+v", decoded)
+	}
+	if decoded["kind"] != "probe" {
+		t.Fatalf("cached payload kind=%v want %q", decoded["kind"], "probe")
+	}
+}
+
+// Regression: below-threshold results KEEP the inline `result` embedding
+// and do NOT carry `resultContextId`. Without this guard the 16D path
+// would accidentally route every node through the cache and introduce
+// an extra GET round-trip the 16B contract did not have.
+func TestDAGExecutor_SmallResultEmbeddedInFrame(t *testing.T) {
+	// No threshold override — default 1 MiB bound. Passthrough is ~31 bytes.
+	_, hs := startDAGTestServer(t)
+
+	dag := `{
+		"schemaVersion":"1.0",
+		"nodes":[{"id":"s","kind":"small","params":{}}],
+		"edges":[]
+	}`
+
+	startResp := startDAGExecution(t, hs, dag)
+	conn := dialDAGStream(t, hs, startResp)
+	defer conn.Close()
+	frames := readDAGFramesUntilTerminal(t, conn, 3*time.Second)
+
+	var data map[string]interface{}
+	for _, f := range frames {
+		if ty, _ := f["type"].(string); ty == "node_result" {
+			data, _ = f["data"].(map[string]interface{})
+			break
+		}
+	}
+	if data == nil {
+		t.Fatalf("no node_result frame: %+v", frames)
+	}
+	if _, has := data["resultContextId"]; has {
+		t.Fatalf("small payload should NOT carry resultContextId; got %+v", data)
+	}
+	if _, has := data["resultBytes"]; has {
+		t.Fatalf("small payload should NOT carry resultBytes; got %+v", data)
+	}
+	inline, ok := data["result"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("expected inline result map on small payload; got %+v", data)
+	}
+	if inline["passthrough"] != true {
+		t.Fatalf("inline result missing passthrough marker: %+v", inline)
+	}
+}

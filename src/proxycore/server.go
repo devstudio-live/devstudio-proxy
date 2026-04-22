@@ -128,6 +128,13 @@ type Server struct {
 	// lazily on first registration via dagReaperOnce.
 	dagExecutions sync.Map
 	dagReaperOnce sync.Once
+
+	// DAG large-result dedup (Phase 16D). Content hash (hex) → UUID
+	// already stored in the /mcp/context cache. Keeps repeat node
+	// results from multiplying cache pressure. Entries self-heal: a
+	// stale pointer (cache entry expired via TTL) is dropped on next
+	// lookup and a fresh store proceeds.
+	dagResultDedup sync.Map
 }
 
 // NewServer creates a Server with default ring buffers and wires the handler.
