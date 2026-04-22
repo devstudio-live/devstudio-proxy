@@ -122,6 +122,12 @@ type Server struct {
 	// between the Kafka pool and the actual brokers.
 	kafkaModePool   sync.Map
 	kafkaModePoolMu sync.Mutex
+
+	// DAG executions registry (Phase 16A). Keyed by execution_id
+	// (UUID string) → *dagExecution. The reaper goroutine is started
+	// lazily on first registration via dagReaperOnce.
+	dagExecutions sync.Map
+	dagReaperOnce sync.Once
 }
 
 // NewServer creates a Server with default ring buffers and wires the handler.

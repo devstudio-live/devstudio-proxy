@@ -93,6 +93,15 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// DAG execution gateway (Phase 16A) — /dag/exec/start,
+	// /dag/exec/{id}/cancel, /dag/exec/{id}/stream. Routed by path
+	// before header-based gateway dispatch so the orchestrator never
+	// collides with the existing 10 protocol handlers.
+	if strings.HasPrefix(r.URL.Path, "/dag/exec") && r.URL.Host == "" {
+		h.s.handleDAGGateway(w, r)
+		return
+	}
+
 	// DevStudio gateway — header-based routing
 	if r.Header.Get("X-DevStudio-Gateway-Route") != "" {
 		switch r.Header.Get("X-DevStudio-Gateway-Protocol") {
