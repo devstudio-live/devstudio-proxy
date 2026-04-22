@@ -58,6 +58,9 @@ type dagFrame struct {
 // dagExecution is one in-flight DAG run. Concurrency model: status +
 // completedAt are guarded by mu; frames is a buffered channel that the
 // executor goroutine writes to and the WebSocket handler reads from.
+// 16C adds the per-node `lastProgressAt` map (guarded by progressMu) so
+// `emitProgress` can throttle high-frequency progress callbacks down to
+// the plan-mandated ≤10 frames/sec ceiling.
 type dagExecution struct {
 	id          string
 	dag         map[string]interface{}
@@ -71,6 +74,11 @@ type dagExecution struct {
 	// closeOnce guards frames-channel close so cancel + executor finish
 	// can race without panicking on double-close.
 	closeOnce sync.Once
+	// progressMu guards lastProgressAt. Held only for the duration of
+	// the throttle decision in emitProgress — never across the actual
+	// frame send (which can block on the frame channel).
+	progressMu      sync.Mutex
+	lastProgressAt  map[string]time.Time
 }
 
 // dagCompletedTTL is how long a finished execution stays in the
@@ -93,11 +101,28 @@ const dagFrameBuffer = 64
 // refuse pathological bodies before they pin a goroutine.
 const dagMaxBodyBytes = 1 * 1024 * 1024
 
+// dagProgressMinInterval is the per-node minimum interval between two
+// `node_progress` frames. Plan §16C acceptance: "Progress frames
+// emitted at most every 100ms per node" → "≤10 progress frames/sec".
+// Surfaced as a package-level var so the throttle test can lower it
+// without altering production behaviour.
+var dagProgressMinInterval = 100 * time.Millisecond
+
 // setStatus updates the execution status atomically and stamps
 // completedAt on terminal transitions so the reaper can age it out.
+//
+// 16C — cancellation is sticky: once status is `cancelled`, no later
+// transition (failed/completed) can overwrite it. The executor races
+// the cancel handler — it would otherwise observe ctx.Err() mid-node,
+// emit a node_failed frame, then call setStatus(failed) AFTER the
+// cancel handler already set cancelled. Pinning cancelled keeps the
+// user-visible registry status honest.
 func (e *dagExecution) setStatus(s dagExecutionStatus) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.status == dagStatusCancelled {
+		return
+	}
 	e.status = s
 	switch s {
 	case dagStatusCompleted, dagStatusFailed, dagStatusCancelled:
@@ -235,13 +260,14 @@ func validateDAGPayload(dag map[string]interface{}) error {
 func (s *Server) registerDAGExecution(dag map[string]interface{}) *dagExecution {
 	ctx, cancel := context.WithCancel(context.Background())
 	exec := &dagExecution{
-		id:        uuid.New().String(),
-		dag:       dag,
-		ctx:       ctx,
-		cancel:    cancel,
-		frames:    make(chan dagFrame, dagFrameBuffer),
-		createdAt: time.Now(),
-		status:    dagStatusPending,
+		id:             uuid.New().String(),
+		dag:            dag,
+		ctx:            ctx,
+		cancel:         cancel,
+		frames:         make(chan dagFrame, dagFrameBuffer),
+		createdAt:      time.Now(),
+		status:         dagStatusPending,
+		lastProgressAt: make(map[string]time.Time),
 	}
 	s.dagExecutions.Store(exec.id, exec)
 	s.ensureDAGReaper()
@@ -376,9 +402,30 @@ func (s *Server) handleDAGExecStream(w http.ResponseWriter, r *http.Request, id 
 				}
 			}
 		case <-clientClosed:
+			// 16C: an unsolicited WS drop is treated as an implicit
+			// cancel so the executor (and the long handlers it dispatches
+			// to via per-execution ctx) unwind promptly. Plan §16C
+			// acceptance: "Browser cancel via WS close → handler context
+			// cancelled within 200ms." Idempotent — already-terminal
+			// executions are left alone so a clean disconnect after
+			// `run_completed` does not retroactively flip status.
+			cancelOnClientDisconnect(exec)
 			return
 		}
 	}
+}
+
+// cancelOnClientDisconnect flips a still-running execution to cancelled
+// and cancels its context. Mirrors the side-effects of the explicit
+// /dag/exec/{id}/cancel handler — the only difference is the trigger.
+func cancelOnClientDisconnect(exec *dagExecution) {
+	status, _ := exec.snapshot()
+	switch status {
+	case dagStatusCompleted, dagStatusFailed, dagStatusCancelled:
+		return
+	}
+	exec.setStatus(dagStatusCancelled)
+	exec.cancel()
 }
 
 // buildDAGWebSocketURL constructs ws[s]://host/dag/exec/{id}/stream

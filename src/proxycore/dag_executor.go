@@ -155,7 +155,7 @@ func runDAGExecution(s *Server, exec *dagExecution) {
 			Data:   map[string]interface{}{"kind": node.Kind},
 		})
 
-		result, nodeErr := runNode(s, exec.ctx, node)
+		result, nodeErr := runNode(s, exec, node)
 		endedAt := time.Now()
 		durationMs := endedAt.Sub(startedAt).Milliseconds()
 
@@ -406,17 +406,32 @@ func nodeDurations(order []string, outcomes map[string]*nodeOutcome) []map[strin
 	return out
 }
 
-// runNode evaluates a single node. Two modes:
-//   - params.gateway present → internal delegation to the existing
-//     gateway handler (sql/mongo/elastic/redis/fs/hprof/k8s/ssh/kafka/
-//     container). The gateway handler itself is untouched; we only
-//     synthesise the request it expects.
-//   - params.gateway absent → passthrough. The executor emits a
-//     node_result with `{passthrough:true, kind}` so downstream
-//     consumers can still render the node as "ran successfully" while
-//     16B holds back on real transform semantics (that lands with
-//     plugin execution in G14 and is out of scope for the proxy).
-func runNode(s *Server, ctx context.Context, node dagNodeSpec) (map[string]interface{}, error) {
+// runNode evaluates a single node. Three modes (checked in order):
+//
+//  1. Instrumented primitive — `params.delayMs` and/or
+//     `params.progressSteps` set. The executor sleeps in N evenly-
+//     sized slices, calling emitProgress between each slice. Both
+//     primitives honour ctx.Done() so cancellation aborts the node
+//     within the next slice (target ≤200ms slice for delayMs ≥200).
+//     Real DAG primitive (a "wait/report progress" node any pipeline
+//     author can drop in) AND the test instrument used to assert the
+//     plan's "1000-step instrumented node ≤10 progress frames/sec"
+//     throttle. (16C — plan §G16/16C.)
+//  2. params.gateway present → internal delegation to one of the 10
+//     existing gateway handlers (sql/mongo/elastic/redis/fs/hprof/
+//     k8s/ssh/kafka/container). The handler itself is untouched; we
+//     synthesise the HTTP request it expects, with ctx propagated via
+//     http.NewRequestWithContext so its existing ctx.Done() loop
+//     unblocks promptly on cancel (16C wires the cancel-source: WS
+//     close → exec.cancel() in dag_gateway.go).
+//  3. Otherwise → passthrough. The executor emits a node_result with
+//     `{passthrough:true, kind}`. Real transform semantics arrive in
+//     14A (plugin sandbox).
+func runNode(s *Server, exec *dagExecution, node dagNodeSpec) (map[string]interface{}, error) {
+	if isInstrumentedNode(node.Params) {
+		return runInstrumentedNode(exec, node)
+	}
+
 	gw, hasGw := gatewayEnvelope(node.Params)
 	if !hasGw {
 		return map[string]interface{}{
@@ -425,7 +440,7 @@ func runNode(s *Server, ctx context.Context, node dagNodeSpec) (map[string]inter
 		}, nil
 	}
 
-	status, body, err := dispatchGatewayInternal(s, ctx, gw.protocol, gw.route, gw.body)
+	status, body, err := dispatchGatewayInternal(s, exec.ctx, gw.protocol, gw.route, gw.body)
 	if err != nil {
 		return nil, err
 	}
@@ -443,6 +458,140 @@ func runNode(s *Server, ctx context.Context, node dagNodeSpec) (map[string]inter
 	return map[string]interface{}{
 		"raw": string(body),
 	}, nil
+}
+
+// isInstrumentedNode reports whether the node opts into the synthetic
+// delay/progress primitive (16C). Either knob alone is sufficient.
+func isInstrumentedNode(params map[string]interface{}) bool {
+	if _, ok := numericParam(params, "delayMs"); ok {
+		return true
+	}
+	if _, ok := numericParam(params, "progressSteps"); ok {
+		return true
+	}
+	return false
+}
+
+// runInstrumentedNode is the synthetic compute primitive (16C). It
+// emits progress frames at most every dagProgressMinInterval per node
+// (the throttle lives in emitProgress), and bails out within one
+// slice on ctx cancellation.
+//
+// Behaviour:
+//   - progressSteps:N (default 1) → loop bound; each iteration calls
+//     emitProgress with progress=i/N.
+//   - delayMs:M (default 0) → total wall-clock spend, divided evenly
+//     across the N steps so a 1000ms / 10-step node sleeps 100ms per
+//     slice. With delayMs:0, the loop runs as fast as it can — useful
+//     for asserting the throttle suppresses high-frequency emits.
+func runInstrumentedNode(exec *dagExecution, node dagNodeSpec) (map[string]interface{}, error) {
+	steps := 1
+	if v, ok := numericParam(node.Params, "progressSteps"); ok && v >= 1 {
+		steps = int(v)
+	}
+	delayMs, _ := numericParam(node.Params, "delayMs")
+
+	var sliceDelay time.Duration
+	if delayMs > 0 {
+		sliceDelay = time.Duration(delayMs/float64(steps)) * time.Millisecond
+	}
+
+	emitted := 0
+	for i := 1; i <= steps; i++ {
+		if err := exec.ctx.Err(); err != nil {
+			return nil, err
+		}
+		if sliceDelay > 0 {
+			timer := time.NewTimer(sliceDelay)
+			select {
+			case <-timer.C:
+			case <-exec.ctx.Done():
+				timer.Stop()
+				return nil, exec.ctx.Err()
+			}
+		}
+		if exec.emitProgress(node.ID, float64(i)/float64(steps), nil) {
+			emitted++
+		}
+	}
+
+	return map[string]interface{}{
+		"instrumented":     true,
+		"steps":            steps,
+		"delayMs":          delayMs,
+		"progressEmitted":  emitted,
+	}, nil
+}
+
+// numericParam reads a JSON number out of params, accepting both the
+// json.Number form (the /dag/exec/start decoder uses UseNumber()) and
+// plain float64/int when params is constructed in-process by tests.
+// Returns (0, false) when the key is missing or not numeric.
+func numericParam(params map[string]interface{}, key string) (float64, bool) {
+	raw, ok := params[key]
+	if !ok {
+		return 0, false
+	}
+	switch v := raw.(type) {
+	case json.Number:
+		f, err := v.Float64()
+		if err != nil {
+			return 0, false
+		}
+		return f, true
+	case float64:
+		return v, true
+	case float32:
+		return float64(v), true
+	case int:
+		return float64(v), true
+	case int64:
+		return float64(v), true
+	case int32:
+		return float64(v), true
+	}
+	return 0, false
+}
+
+// emitProgress is the throttled producer of `node_progress` frames.
+// Plan §16C: "Progress frames {type:'node_progress', nodeId, progress,
+// intermediate?} emitted at most every 100ms per node."
+//
+// Returns true when a frame was queued, false when the call was
+// throttled (caller can use this to decide whether to skip preparing
+// the next intermediate payload). The throttle is per-node, not
+// global, so independent nodes can each hit the 10/sec ceiling without
+// starving each other.
+//
+// The frame channel send happens AFTER the throttle window mutation
+// is released so emitProgress never holds progressMu across a blocking
+// channel send.
+func (e *dagExecution) emitProgress(nodeID string, progress float64, intermediate map[string]interface{}) bool {
+	e.progressMu.Lock()
+	if e.lastProgressAt == nil {
+		e.lastProgressAt = make(map[string]time.Time)
+	}
+	last, hasLast := e.lastProgressAt[nodeID]
+	now := time.Now()
+	if hasLast && now.Sub(last) < dagProgressMinInterval {
+		e.progressMu.Unlock()
+		return false
+	}
+	e.lastProgressAt[nodeID] = now
+	e.progressMu.Unlock()
+
+	data := map[string]interface{}{
+		"progress": progress,
+	}
+	if intermediate != nil {
+		data["intermediate"] = intermediate
+	}
+	e.emitFrame(dagFrame{
+		Type:   "node_progress",
+		NodeID: nodeID,
+		Data:   data,
+	})
+	return true
 }
 
 // gatewayCall is the parsed envelope the DAG author placed on
