@@ -86,7 +86,7 @@ TOTAL_PHASES=${#PHASES[@]}
 # ── Helpers ───────────────────────────────────────────────────
 is_phase_done() {
   local phase_id="$1"
-  grep -q "| ${phase_id} .* | done |" "$PROGRESS" 2>/dev/null
+  grep -Eq "^\| ${phase_id}[[:space:]]+\|.*\|[[:space:]]+done[[:space:]]+\|" "$PROGRESS" 2>/dev/null
 }
 
 timestamp() {
@@ -95,7 +95,7 @@ timestamp() {
 
 count_done() {
   local n
-  n=$(grep -c "| done |" "$PROGRESS" 2>/dev/null) || true
+  n=$(grep -Ec "\|[[:space:]]+done[[:space:]]+\|" "$PROGRESS" 2>/dev/null) || true
   echo "${n:-0}"
 }
 
@@ -640,9 +640,8 @@ SELECTED=()
 DRY_RUN=false
 
 parse_selection() {
-  local args=("$@")
   local positional=()
-  for a in "${args[@]}"; do
+  for a in "$@"; do
     case "$a" in
       --dry-run) DRY_RUN=true ;;
       *)         positional+=("$a") ;;
@@ -923,7 +922,7 @@ echo "║  Logs:         $LOG_DIR"
 echo "╚══════════════════════════════════════════════════════════╝"
 
 if [[ $FAILED -eq 0 ]] && ! $DRY_RUN; then
-  REMAINING=$(grep -c "| pending |" "$PROGRESS" 2>/dev/null || echo 0)
+  REMAINING=$(grep -Ec "\|[[:space:]]+pending[[:space:]]+\|" "$PROGRESS" 2>/dev/null || echo 0)
   if [[ "$REMAINING" -gt 0 ]]; then
     echo ""
     echo "  $REMAINING phases still pending. Next:"
