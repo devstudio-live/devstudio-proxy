@@ -16,12 +16,12 @@ type HprofDiffResult struct {
 	Deltas []HprofClassDelta `json:"deltas"`
 
 	// Summary stats
-	TotalCountA    int64 `json:"totalCountA"`
-	TotalCountB    int64 `json:"totalCountB"`
-	TotalRetainedA int64 `json:"totalRetainedA"`
-	TotalRetainedB int64 `json:"totalRetainedB"`
-	NewClassCount  int   `json:"newClassCount"`
-	FreedClassCount int  `json:"freedClassCount"`
+	TotalCountA     int64 `json:"totalCountA"`
+	TotalCountB     int64 `json:"totalCountB"`
+	TotalRetainedA  int64 `json:"totalRetainedA"`
+	TotalRetainedB  int64 `json:"totalRetainedB"`
+	NewClassCount   int   `json:"newClassCount"`
+	FreedClassCount int   `json:"freedClassCount"`
 }
 
 // HprofClassDelta represents the delta for a single class between two dumps.

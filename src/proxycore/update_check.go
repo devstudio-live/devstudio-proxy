@@ -12,9 +12,9 @@ import (
 )
 
 const (
-	updateOwner      = "devstudio-live"
-	updateRepo       = "devstudio-proxy"
-	updateCacheTTL   = 10 * time.Minute
+	updateOwner    = "devstudio-live"
+	updateRepo     = "devstudio-proxy"
+	updateCacheTTL = 10 * time.Minute
 )
 
 // UpdateInfo holds the result of a version check against GitHub releases.

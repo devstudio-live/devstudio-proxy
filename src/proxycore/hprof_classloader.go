@@ -9,21 +9,21 @@ import (
 
 // ClassLoaderAnalysis holds the results of class loader analysis.
 type ClassLoaderAnalysis struct {
-	Loaders          []ClassLoaderEntry `json:"loaders"`
-	DuplicateCount   int                `json:"duplicateCount"`
-	LeakWarning      string             `json:"leakWarning,omitempty"`
-	TotalClassCount  int                `json:"totalClassCount"`
-	TotalLoaders     int                `json:"totalLoaders"`
+	Loaders         []ClassLoaderEntry `json:"loaders"`
+	DuplicateCount  int                `json:"duplicateCount"`
+	LeakWarning     string             `json:"leakWarning,omitempty"`
+	TotalClassCount int                `json:"totalClassCount"`
+	TotalLoaders    int                `json:"totalLoaders"`
 }
 
 // ClassLoaderEntry represents a single class loader with its loaded classes.
 type ClassLoaderEntry struct {
-	LoaderID      string `json:"loaderId"`
-	LoaderClass   string `json:"loaderClass"`
-	ClassCount    int    `json:"classCount"`
-	RetainedSize  int64  `json:"retainedSize"`
-	IsDuplicate   bool   `json:"isDuplicate"`
-	DuplicateOf   string `json:"duplicateOf,omitempty"`
+	LoaderID     string `json:"loaderId"`
+	LoaderClass  string `json:"loaderClass"`
+	ClassCount   int    `json:"classCount"`
+	RetainedSize int64  `json:"retainedSize"`
+	IsDuplicate  bool   `json:"isDuplicate"`
+	DuplicateOf  string `json:"duplicateOf,omitempty"`
 }
 
 // AnalyzeClassLoaders scans CLASS_DUMP records for class loader objects and

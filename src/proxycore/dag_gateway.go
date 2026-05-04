@@ -77,8 +77,8 @@ type dagExecution struct {
 	// progressMu guards lastProgressAt. Held only for the duration of
 	// the throttle decision in emitProgress — never across the actual
 	// frame send (which can block on the frame channel).
-	progressMu      sync.Mutex
-	lastProgressAt  map[string]time.Time
+	progressMu     sync.Mutex
+	lastProgressAt map[string]time.Time
 }
 
 // dagCompletedTTL is how long a finished execution stays in the

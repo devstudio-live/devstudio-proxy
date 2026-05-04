@@ -690,10 +690,10 @@ func TestDAGExecutor_ConcurrentExecutionsDoNotCrossContaminate(t *testing.T) {
 	}
 
 	type result struct {
-		execID   string
-		nodeID   string
-		frames   []map[string]interface{}
-		dialErr  error
+		execID  string
+		nodeID  string
+		frames  []map[string]interface{}
+		dialErr error
 	}
 
 	const N = 4

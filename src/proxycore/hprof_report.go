@@ -50,18 +50,18 @@ func GenerateHprofReport(result *HprofResult, includeAI bool) (*HprofReportResul
 // ── Report Data ─────────────────────────────────────────────────────────────
 
 type reportData struct {
-	GeneratedAt    string
-	FileSize       int64
-	Version        string
-	TotalObjects   int64
-	TotalShallow   int64
-	ClassCount     int
-	GCRootCount    int
-	TopClasses     []HprofClassSummary
-	Insights       []HprofInsight
-	ClassLoaders   *ClassLoaderAnalysis
-	Threads        *ThreadRetainedAnalysis
-	IncludeAI      bool
+	GeneratedAt  string
+	FileSize     int64
+	Version      string
+	TotalObjects int64
+	TotalShallow int64
+	ClassCount   int
+	GCRootCount  int
+	TopClasses   []HprofClassSummary
+	Insights     []HprofInsight
+	ClassLoaders *ClassLoaderAnalysis
+	Threads      *ThreadRetainedAnalysis
+	IncludeAI    bool
 }
 
 func buildReportData(result *HprofResult, includeAI bool) reportData {

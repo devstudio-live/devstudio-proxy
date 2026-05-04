@@ -14,15 +14,15 @@ import (
 
 // SSHConnection holds the parameters needed to open an SSH connection.
 type SSHConnection struct {
-	Host       string          `json:"host"`
-	Port       int             `json:"port,omitempty"`
-	User       string          `json:"user"`
-	AuthMethod string          `json:"authMethod"` // password | key | agent | keyboard-interactive
-	Password   string          `json:"password,omitempty"`
-	PrivateKey string          `json:"privateKey,omitempty"` // PEM content
-	Passphrase string          `json:"passphrase,omitempty"`
-	Label      string          `json:"label,omitempty"`
-	Group      string          `json:"group,omitempty"`
+	Host       string `json:"host"`
+	Port       int    `json:"port,omitempty"`
+	User       string `json:"user"`
+	AuthMethod string `json:"authMethod"` // password | key | agent | keyboard-interactive
+	Password   string `json:"password,omitempty"`
+	PrivateKey string `json:"privateKey,omitempty"` // PEM content
+	Passphrase string `json:"passphrase,omitempty"`
+	Label      string `json:"label,omitempty"`
+	Group      string `json:"group,omitempty"`
 	// Phase 5 — jump hosts & advanced auth
 	JumpHosts []SSHConnection `json:"jumpHosts,omitempty"` // ordered chain of proxy hops
 	KIAnswers []string        `json:"kiAnswers,omitempty"` // pre-provided keyboard-interactive answers
@@ -52,7 +52,7 @@ func sshConnectionKey(conn SSHConnection) string {
 	case "key":
 		sum := sha256.Sum256([]byte(conn.PrivateKey))
 		raw += ":" + hex.EncodeToString(sum[:])
-	// agent, keyboard-interactive: no stable secret to include; identity is from env/agent
+		// agent, keyboard-interactive: no stable secret to include; identity is from env/agent
 	}
 	// Include jump host chain so different routes get different pool entries
 	for _, jh := range conn.JumpHosts {
@@ -343,4 +343,3 @@ func (s *Server) reapIdleSSHConnections() {
 		}
 	}
 }
-

@@ -38,14 +38,14 @@ func EnsureLocalCert() (certPEM, keyPEM []byte, caPath string, fresh bool, err e
 		return nil, nil, "", false, err
 	}
 
-	caKeyPath  := filepath.Join(dir, "ca.key")
+	caKeyPath := filepath.Join(dir, "ca.key")
 	caCertPath := filepath.Join(dir, "ca.crt")
 	srvKeyPath := filepath.Join(dir, "server.key")
 	srvCrtPath := filepath.Join(dir, "server.crt")
-	caPath      = caCertPath
+	caPath = caCertPath
 
 	caCertPEMBytes, caCertReadErr := os.ReadFile(caCertPath)
-	caKeyPEMBytes, caKeyReadErr   := os.ReadFile(caKeyPath)
+	caKeyPEMBytes, caKeyReadErr := os.ReadFile(caKeyPath)
 
 	var caKey *ecdsa.PrivateKey
 	var caCert *x509.Certificate
@@ -84,7 +84,7 @@ func EnsureLocalCert() (certPEM, keyPEM []byte, caPath string, fresh bool, err e
 	}
 
 	srvCertPEMBytes, srvCertReadErr := os.ReadFile(srvCrtPath)
-	srvKeyPEMBytes, srvKeyReadErr   := os.ReadFile(srvKeyPath)
+	srvKeyPEMBytes, srvKeyReadErr := os.ReadFile(srvKeyPath)
 
 	if srvCertReadErr != nil || srvKeyReadErr != nil || fresh || needsRegen(srvCertPEMBytes) {
 		// Regenerate leaf cert (reuses existing CA — no new trust prompt needed).
@@ -100,7 +100,7 @@ func EnsureLocalCert() (certPEM, keyPEM []byte, caPath string, fresh bool, err e
 		}
 	} else {
 		certPEM = srvCertPEMBytes
-		keyPEM  = srvKeyPEMBytes
+		keyPEM = srvKeyPEMBytes
 	}
 
 	return certPEM, keyPEM, caPath, fresh, nil

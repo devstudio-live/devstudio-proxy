@@ -112,19 +112,19 @@ func (s *Server) handleK8sApply(w http.ResponseWriter, r *http.Request, req K8sR
 func discoverGVR(_ *rest.Config, gvk schema.GroupVersionKind) (schema.GroupVersionResource, error) {
 	// Use well-known mappings for core resources to avoid discovery round-trip
 	known := map[schema.GroupVersionKind]schema.GroupVersionResource{
-		{Group: "", Version: "v1", Kind: "Pod"}:                         {Group: "", Version: "v1", Resource: "pods"},
-		{Group: "", Version: "v1", Kind: "Service"}:                     {Group: "", Version: "v1", Resource: "services"},
-		{Group: "", Version: "v1", Kind: "ConfigMap"}:                   {Group: "", Version: "v1", Resource: "configmaps"},
-		{Group: "", Version: "v1", Kind: "Secret"}:                      {Group: "", Version: "v1", Resource: "secrets"},
-		{Group: "", Version: "v1", Kind: "Namespace"}:                   {Group: "", Version: "v1", Resource: "namespaces"},
-		{Group: "", Version: "v1", Kind: "PersistentVolumeClaim"}:       {Group: "", Version: "v1", Resource: "persistentvolumeclaims"},
-		{Group: "", Version: "v1", Kind: "PersistentVolume"}:            {Group: "", Version: "v1", Resource: "persistentvolumes"},
-		{Group: "apps", Version: "v1", Kind: "Deployment"}:              {Group: "apps", Version: "v1", Resource: "deployments"},
-		{Group: "apps", Version: "v1", Kind: "StatefulSet"}:             {Group: "apps", Version: "v1", Resource: "statefulsets"},
-		{Group: "apps", Version: "v1", Kind: "DaemonSet"}:               {Group: "apps", Version: "v1", Resource: "daemonsets"},
-		{Group: "batch", Version: "v1", Kind: "Job"}:                    {Group: "batch", Version: "v1", Resource: "jobs"},
-		{Group: "batch", Version: "v1", Kind: "CronJob"}:                {Group: "batch", Version: "v1", Resource: "cronjobs"},
-		{Group: "networking.k8s.io", Version: "v1", Kind: "Ingress"}:    {Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"},
+		{Group: "", Version: "v1", Kind: "Pod"}:                      {Group: "", Version: "v1", Resource: "pods"},
+		{Group: "", Version: "v1", Kind: "Service"}:                  {Group: "", Version: "v1", Resource: "services"},
+		{Group: "", Version: "v1", Kind: "ConfigMap"}:                {Group: "", Version: "v1", Resource: "configmaps"},
+		{Group: "", Version: "v1", Kind: "Secret"}:                   {Group: "", Version: "v1", Resource: "secrets"},
+		{Group: "", Version: "v1", Kind: "Namespace"}:                {Group: "", Version: "v1", Resource: "namespaces"},
+		{Group: "", Version: "v1", Kind: "PersistentVolumeClaim"}:    {Group: "", Version: "v1", Resource: "persistentvolumeclaims"},
+		{Group: "", Version: "v1", Kind: "PersistentVolume"}:         {Group: "", Version: "v1", Resource: "persistentvolumes"},
+		{Group: "apps", Version: "v1", Kind: "Deployment"}:           {Group: "apps", Version: "v1", Resource: "deployments"},
+		{Group: "apps", Version: "v1", Kind: "StatefulSet"}:          {Group: "apps", Version: "v1", Resource: "statefulsets"},
+		{Group: "apps", Version: "v1", Kind: "DaemonSet"}:            {Group: "apps", Version: "v1", Resource: "daemonsets"},
+		{Group: "batch", Version: "v1", Kind: "Job"}:                 {Group: "batch", Version: "v1", Resource: "jobs"},
+		{Group: "batch", Version: "v1", Kind: "CronJob"}:             {Group: "batch", Version: "v1", Resource: "cronjobs"},
+		{Group: "networking.k8s.io", Version: "v1", Kind: "Ingress"}: {Group: "networking.k8s.io", Version: "v1", Resource: "ingresses"},
 	}
 	if gvr, ok := known[gvk]; ok {
 		return gvr, nil
@@ -442,4 +442,3 @@ func isDaemonSetPod(cs *kubernetes.Clientset, pod *corev1.Pod) bool {
 	}
 	return false
 }
-

@@ -236,7 +236,6 @@ func (a *App) HprofAnalyzeStream(streamId string, path string) string {
 	return streamId
 }
 
-
 // ProxyResponse is the structured return value for ProxyRequest.
 type ProxyResponse struct {
 	StatusCode   int               `json:"statusCode"`

@@ -330,17 +330,17 @@ func (s *Server) runHprofParse(job *HprofJob) {
 
 	// Send analysis-done event with summary
 	doneData, _ := json.Marshal(map[string]interface{}{
-		"jobId":            job.ID,
-		"totalObjects":     result.TotalObjects,
+		"jobId":             job.ID,
+		"totalObjects":      result.TotalObjects,
 		"totalShallowBytes": result.TotalShallowBytes,
-		"classCount":       result.ClassCount,
-		"gcRootCount":      result.GCRootCount,
-		"timestamp":        result.Timestamp,
-		"version":          result.Version,
-		"idSize":           result.IDSize,
-		"fileSize":         result.FileSize,
-		"mode":             "proxy",
-		"typeSummary":      result.TopClasses(50),
+		"classCount":        result.ClassCount,
+		"gcRootCount":       result.GCRootCount,
+		"timestamp":         result.Timestamp,
+		"version":           result.Version,
+		"idSize":            result.IDSize,
+		"fileSize":          result.FileSize,
+		"mode":              "proxy",
+		"typeSummary":       result.TopClasses(50),
 	})
 	job.broadcast(sseFrame("done", string(doneData)))
 }
@@ -956,7 +956,7 @@ func (s *Server) hprofFlameGraph(w http.ResponseWriter, _ *http.Request, res *Hp
 	fg := BuildFlameGraph(res)
 	if fg == nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"root":          nil,
+			"root":           nil,
 			"hasStackTraces": false,
 			"totalAllocated": 0,
 		})
@@ -1100,14 +1100,14 @@ func (s *Server) hprofCompare(w http.ResponseWriter, r *http.Request) {
 	s.hprofJobs.Store(diffJob.ID, diffJob)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"diffId":           diffJob.ID,
-		"totalCountA":      diff.TotalCountA,
-		"totalCountB":      diff.TotalCountB,
-		"totalRetainedA":   diff.TotalRetainedA,
-		"totalRetainedB":   diff.TotalRetainedB,
-		"newClassCount":    diff.NewClassCount,
-		"freedClassCount":  diff.FreedClassCount,
-		"deltaCount":       len(diff.Deltas),
+		"diffId":          diffJob.ID,
+		"totalCountA":     diff.TotalCountA,
+		"totalCountB":     diff.TotalCountB,
+		"totalRetainedA":  diff.TotalRetainedA,
+		"totalRetainedB":  diff.TotalRetainedB,
+		"newClassCount":   diff.NewClassCount,
+		"freedClassCount": diff.FreedClassCount,
+		"deltaCount":      len(diff.Deltas),
 	})
 }
 

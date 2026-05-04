@@ -238,12 +238,12 @@ var collectionClasses = map[string]struct {
 	capacityField string // if empty, capacity comes from backing array
 	arrayField    string // backing array field name
 }{
-	"java.util.HashMap":           {sizeField: "size", arrayField: "table"},
-	"java.util.LinkedHashMap":     {sizeField: "size", arrayField: "table"},
-	"java.util.Hashtable":         {sizeField: "count", arrayField: "table"},
-	"java.util.ArrayList":         {sizeField: "size", arrayField: "elementData"},
-	"java.util.HashSet":           {sizeField: "size", arrayField: "table"}, // Note: actually wraps HashMap, but we try
-	"java.util.ArrayDeque":        {sizeField: "head", arrayField: "elements"},
+	"java.util.HashMap":                      {sizeField: "size", arrayField: "table"},
+	"java.util.LinkedHashMap":                {sizeField: "size", arrayField: "table"},
+	"java.util.Hashtable":                    {sizeField: "count", arrayField: "table"},
+	"java.util.ArrayList":                    {sizeField: "size", arrayField: "elementData"},
+	"java.util.HashSet":                      {sizeField: "size", arrayField: "table"}, // Note: actually wraps HashMap, but we try
+	"java.util.ArrayDeque":                   {sizeField: "head", arrayField: "elements"},
 	"java.util.concurrent.ConcurrentHashMap": {sizeField: "sizeCtl", arrayField: "table"},
 }
 

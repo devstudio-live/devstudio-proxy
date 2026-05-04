@@ -30,18 +30,18 @@ type K8sRequest struct {
 	YAML          string `json:"yaml,omitempty"`
 	Limit         int64  `json:"limit,omitempty"`
 	// Phase 2 — write operations
-	Replicas     *int32 `json:"replicas,omitempty"`
-	Uncordon     bool   `json:"uncordon,omitempty"`
-	Force        bool   `json:"force,omitempty"`
-	GracePeriod  *int64 `json:"gracePeriod,omitempty"`
-	Action       string `json:"action,omitempty"` // for exec: "resize", etc.
-	Command      []string `json:"command,omitempty"` // for exec
-	TTY          bool   `json:"tty,omitempty"`
-	Stdin        bool   `json:"stdin,omitempty"`
+	Replicas    *int32   `json:"replicas,omitempty"`
+	Uncordon    bool     `json:"uncordon,omitempty"`
+	Force       bool     `json:"force,omitempty"`
+	GracePeriod *int64   `json:"gracePeriod,omitempty"`
+	Action      string   `json:"action,omitempty"`  // for exec: "resize", etc.
+	Command     []string `json:"command,omitempty"` // for exec
+	TTY         bool     `json:"tty,omitempty"`
+	Stdin       bool     `json:"stdin,omitempty"`
 	// Port-forward
-	PodPort      int    `json:"podPort,omitempty"`
-	LocalPort    int    `json:"localPort,omitempty"`
-	ForwardID    string `json:"forwardId,omitempty"`
+	PodPort   int    `json:"podPort,omitempty"`
+	LocalPort int    `json:"localPort,omitempty"`
+	ForwardID string `json:"forwardId,omitempty"`
 	// SSH connection mode
 	ConnectionMode string         `json:"connectionMode,omitempty"` // "kubeconfig" | "ssh"
 	SSHConnection  *SSHConnection `json:"sshConnection,omitempty"`
@@ -596,16 +596,16 @@ func (s *Server) handleK8sResources(w http.ResponseWriter, r *http.Request, req 
 			}
 			scName := pv.Spec.StorageClassName
 			items = append(items, map[string]any{
-				"name":            pv.Name,
-				"capacity":        capacity,
-				"accessModes":     pv.Spec.AccessModes,
-				"reclaimPolicy":   string(pv.Spec.PersistentVolumeReclaimPolicy),
-				"status":          string(pv.Status.Phase),
-				"claim":           pv.Spec.ClaimRef,
-				"storageClass":    scName,
-				"age":             time.Since(pv.CreationTimestamp.Time).Truncate(time.Second).String(),
-				"labels":          pv.Labels,
-				"createdAt":       pv.CreationTimestamp.Time,
+				"name":          pv.Name,
+				"capacity":      capacity,
+				"accessModes":   pv.Spec.AccessModes,
+				"reclaimPolicy": string(pv.Spec.PersistentVolumeReclaimPolicy),
+				"status":        string(pv.Status.Phase),
+				"claim":         pv.Spec.ClaimRef,
+				"storageClass":  scName,
+				"age":           time.Since(pv.CreationTimestamp.Time).Truncate(time.Second).String(),
+				"labels":        pv.Labels,
+				"createdAt":     pv.CreationTimestamp.Time,
 			})
 		}
 
@@ -630,16 +630,16 @@ func (s *Server) handleK8sResources(w http.ResponseWriter, r *http.Request, req 
 				}
 			}
 			items = append(items, map[string]any{
-				"name":      n.Name,
-				"status":    status,
-				"roles":     nodeRoles(n.Labels),
-				"age":       time.Since(n.CreationTimestamp.Time).Truncate(time.Second).String(),
-				"version":   n.Status.NodeInfo.KubeletVersion,
-				"os":        n.Status.NodeInfo.OSImage,
-				"arch":      n.Status.NodeInfo.Architecture,
+				"name":       n.Name,
+				"status":     status,
+				"roles":      nodeRoles(n.Labels),
+				"age":        time.Since(n.CreationTimestamp.Time).Truncate(time.Second).String(),
+				"version":    n.Status.NodeInfo.KubeletVersion,
+				"os":         n.Status.NodeInfo.OSImage,
+				"arch":       n.Status.NodeInfo.Architecture,
 				"internalIP": internalIP,
-				"labels":    n.Labels,
-				"createdAt": n.CreationTimestamp.Time,
+				"labels":     n.Labels,
+				"createdAt":  n.CreationTimestamp.Time,
 			})
 		}
 
@@ -667,14 +667,14 @@ func (s *Server) handleK8sResources(w http.ResponseWriter, r *http.Request, req 
 		}
 		for _, e := range eventList.Items {
 			items = append(items, map[string]any{
-				"type":          e.Type,
-				"reason":        e.Reason,
-				"message":       e.Message,
+				"type":           e.Type,
+				"reason":         e.Reason,
+				"message":        e.Message,
 				"involvedObject": map[string]any{"kind": e.InvolvedObject.Kind, "name": e.InvolvedObject.Name},
-				"count":         e.Count,
-				"lastTimestamp": e.LastTimestamp.Time,
-				"source":        e.Source.Component,
-				"createdAt":     e.CreationTimestamp.Time,
+				"count":          e.Count,
+				"lastTimestamp":  e.LastTimestamp.Time,
+				"source":         e.Source.Component,
+				"createdAt":      e.CreationTimestamp.Time,
 			})
 		}
 

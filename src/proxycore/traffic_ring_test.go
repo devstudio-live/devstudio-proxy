@@ -374,9 +374,9 @@ func TestTrafficRing_Stats(t *testing.T) {
 func TestAdminTrafficStats_ReturnsShape(t *testing.T) {
 	s := newAdminTestServer()
 	s.TrafficBuf.Push(TrafficRecord{
-		Timestamp: time.Now().UnixMilli(),
-		Protocol:  "sql",
-		Status:    200,
+		Timestamp:  time.Now().UnixMilli(),
+		Protocol:   "sql",
+		Status:     200,
 		DurationUS: 1500,
 	})
 	req := httptest.NewRequest("GET", "/admin/traffic/stats", nil)

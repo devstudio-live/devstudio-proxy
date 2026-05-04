@@ -14,8 +14,8 @@ type ThreadObjectMeta struct {
 
 // ThreadRetainedAnalysis holds thread-level heap attribution data.
 type ThreadRetainedAnalysis struct {
-	Threads     []ThreadEntry `json:"threads"`
-	TotalCount  int           `json:"totalCount"`
+	Threads    []ThreadEntry `json:"threads"`
+	TotalCount int           `json:"totalCount"`
 }
 
 // ThreadEntry represents a single thread's heap attribution.

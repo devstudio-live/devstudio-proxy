@@ -97,10 +97,10 @@ func (s *Server) adminTrustCert(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) adminPostConfig(w http.ResponseWriter, r *http.Request) {
 	var body struct {
-		Log              *bool `json:"log"`
-		Verbose          *bool `json:"verbose"`
-		HTTPS            *bool `json:"https"`
-		VerboseTTLSeconds *int `json:"verbose_ttl_seconds"`
+		Log               *bool `json:"log"`
+		Verbose           *bool `json:"verbose"`
+		HTTPS             *bool `json:"https"`
+		VerboseTTLSeconds *int  `json:"verbose_ttl_seconds"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		w.Header().Set("Content-Type", "application/json")

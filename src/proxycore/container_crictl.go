@@ -358,9 +358,9 @@ func (c *CrictlAdapter) SystemInfo() (*SystemInfo, error) {
 // ── crictl JSON models (internal) ───────────────────────────────────────────
 
 type crictlContainerJSON struct {
-	ID          string            `json:"id"`
-	PodSandboxID string          `json:"podSandboxId"`
-	Metadata    struct {
+	ID           string `json:"id"`
+	PodSandboxID string `json:"podSandboxId"`
+	Metadata     struct {
 		Name string `json:"name"`
 	} `json:"metadata"`
 	Image struct {

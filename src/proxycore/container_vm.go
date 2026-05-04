@@ -84,14 +84,14 @@ func detectAllVMs() []VMInfo {
 // limaListEntry represents one instance in `limactl list --json` output.
 // Lima outputs one JSON object per line (NDJSON), not a JSON array.
 type limaListEntry struct {
-	Name    string `json:"name"`
-	Status  string `json:"status"` // Running, Stopped
-	Dir     string `json:"dir"`
-	Arch    string `json:"arch"`
-	CPUs    int    `json:"cpus"`
-	Memory  int64  `json:"memory"` // bytes
-	Disk    int64  `json:"disk"`   // bytes
-	VMType  string `json:"vmType"`
+	Name      string `json:"name"`
+	Status    string `json:"status"` // Running, Stopped
+	Dir       string `json:"dir"`
+	Arch      string `json:"arch"`
+	CPUs      int    `json:"cpus"`
+	Memory    int64  `json:"memory"` // bytes
+	Disk      int64  `json:"disk"`   // bytes
+	VMType    string `json:"vmType"`
 	MountType string `json:"mountType,omitempty"`
 }
 
@@ -232,16 +232,16 @@ func limaPID(dir string) int {
 
 // colimaListEntry represents one instance in `colima list --json` output.
 type colimaListEntry struct {
-	Name    string `json:"name"`
-	Status  string `json:"status"` // Running, Stopped
-	Arch    string `json:"arch"`
-	CPUs    int    `json:"cpus"`
-	Memory  int64  `json:"memory"` // bytes
-	Disk    int64  `json:"disk"`   // bytes
-	Runtime string `json:"runtime"`
-	VMType  string `json:"vmType,omitempty"`
+	Name      string `json:"name"`
+	Status    string `json:"status"` // Running, Stopped
+	Arch      string `json:"arch"`
+	CPUs      int    `json:"cpus"`
+	Memory    int64  `json:"memory"` // bytes
+	Disk      int64  `json:"disk"`   // bytes
+	Runtime   string `json:"runtime"`
+	VMType    string `json:"vmType,omitempty"`
 	MountType string `json:"mountType,omitempty"`
-	Address string `json:"address,omitempty"`
+	Address   string `json:"address,omitempty"`
 }
 
 func detectColimaVMs() []VMInfo {

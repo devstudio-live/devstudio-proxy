@@ -669,11 +669,11 @@ type dockerVolumeJSON struct {
 }
 
 type dockerNetworkJSON struct {
-	ID         string `json:"Id"`
-	Name       string
-	Driver     string
-	Scope      string
-	IPAM       struct {
+	ID     string `json:"Id"`
+	Name   string
+	Driver string
+	Scope  string
+	IPAM   struct {
 		Config []struct {
 			Subnet  string
 			Gateway string

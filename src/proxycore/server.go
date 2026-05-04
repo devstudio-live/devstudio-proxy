@@ -34,7 +34,7 @@ type Server struct {
 	verboseRevertMu    sync.Mutex
 
 	// LogEnabled / VerboseEnabled are toggled at runtime by /admin/config.
-	LogEnabled    atomic.Bool
+	LogEnabled     atomic.Bool
 	VerboseEnabled atomic.Bool
 
 	// AdminPort is the listening port (readable by admin endpoints).

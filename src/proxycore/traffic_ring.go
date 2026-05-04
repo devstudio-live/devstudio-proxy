@@ -10,26 +10,26 @@ import (
 
 // TrafficRecord holds metadata about a single proxied HTTP request.
 type TrafficRecord struct {
-	ID          int64             `json:"id"`
-	Timestamp   int64             `json:"ts"`      // UnixMilli
-	Method      string            `json:"method"`
-	Path        string            `json:"path"`
-	Protocol    string            `json:"protocol"` // sql, mongo, k8s, fs, hprof, elastic, redis, mcp, forward, tunnel, admin, health
-	Operation   string            `json:"operation,omitempty"` // e.g., "query", "exec", "list" (gateway-specific)
-	Target      string            `json:"target,omitempty"`    // e.g., DB alias, k8s context, tunnel host
-	RemoteAddr  string            `json:"remote_addr,omitempty"`
-	Status      int               `json:"status"`
-	DurationUS  int64             `json:"duration_us"`
-	ReqSize     int64             `json:"req_size"`
-	RespSize    int64             `json:"resp_size"`
-	ReqHeaders  map[string]string `json:"req_headers,omitempty"`
-	RespHeaders map[string]string `json:"resp_headers,omitempty"`
-	ReqBody     string            `json:"req_body,omitempty"`  // truncated preview, verbose only
-	RespBody    string            `json:"resp_body,omitempty"` // truncated preview, verbose only
-	ReqBodyTrunc bool             `json:"req_body_trunc,omitempty"`
-	RespBodyTrunc bool            `json:"resp_body_trunc,omitempty"`
-	WSUpgrade   bool              `json:"ws_upgrade,omitempty"`
-	Error       string            `json:"error,omitempty"`
+	ID            int64             `json:"id"`
+	Timestamp     int64             `json:"ts"` // UnixMilli
+	Method        string            `json:"method"`
+	Path          string            `json:"path"`
+	Protocol      string            `json:"protocol"`            // sql, mongo, k8s, fs, hprof, elastic, redis, mcp, forward, tunnel, admin, health
+	Operation     string            `json:"operation,omitempty"` // e.g., "query", "exec", "list" (gateway-specific)
+	Target        string            `json:"target,omitempty"`    // e.g., DB alias, k8s context, tunnel host
+	RemoteAddr    string            `json:"remote_addr,omitempty"`
+	Status        int               `json:"status"`
+	DurationUS    int64             `json:"duration_us"`
+	ReqSize       int64             `json:"req_size"`
+	RespSize      int64             `json:"resp_size"`
+	ReqHeaders    map[string]string `json:"req_headers,omitempty"`
+	RespHeaders   map[string]string `json:"resp_headers,omitempty"`
+	ReqBody       string            `json:"req_body,omitempty"`  // truncated preview, verbose only
+	RespBody      string            `json:"resp_body,omitempty"` // truncated preview, verbose only
+	ReqBodyTrunc  bool              `json:"req_body_trunc,omitempty"`
+	RespBodyTrunc bool              `json:"resp_body_trunc,omitempty"`
+	WSUpgrade     bool              `json:"ws_upgrade,omitempty"`
+	Error         string            `json:"error,omitempty"`
 }
 
 // TrafficRing is a fixed-capacity ring buffer for traffic records with pub/sub support.
@@ -118,21 +118,21 @@ func (r *TrafficRing) Clear() {
 
 // TrafficStats contains aggregate metrics computed over the current buffer.
 type TrafficStats struct {
-	Count         int             `json:"count"`
-	ErrorCount    int             `json:"error_count"`
-	ErrorRate     float64         `json:"error_rate"` // 0.0-1.0
-	AvgDurationUS int64           `json:"avg_duration_us"`
-	P50DurationUS int64           `json:"p50_duration_us"`
-	P95DurationUS int64           `json:"p95_duration_us"`
-	P99DurationUS int64           `json:"p99_duration_us"`
-	TotalReqBytes int64           `json:"total_req_bytes"`
+	Count          int            `json:"count"`
+	ErrorCount     int            `json:"error_count"`
+	ErrorRate      float64        `json:"error_rate"` // 0.0-1.0
+	AvgDurationUS  int64          `json:"avg_duration_us"`
+	P50DurationUS  int64          `json:"p50_duration_us"`
+	P95DurationUS  int64          `json:"p95_duration_us"`
+	P99DurationUS  int64          `json:"p99_duration_us"`
+	TotalReqBytes  int64          `json:"total_req_bytes"`
 	TotalRespBytes int64          `json:"total_resp_bytes"`
-	ByProtocol    map[string]int  `json:"by_protocol"`
-	ByStatusClass map[string]int  `json:"by_status_class"` // "2xx", "3xx", "4xx", "5xx", "other"
-	RPS1m         float64         `json:"rps_1m"`          // requests per second, last minute
-	WindowSeconds int             `json:"window_seconds"`
-	OldestTS      int64           `json:"oldest_ts,omitempty"`
-	NewestTS      int64           `json:"newest_ts,omitempty"`
+	ByProtocol     map[string]int `json:"by_protocol"`
+	ByStatusClass  map[string]int `json:"by_status_class"` // "2xx", "3xx", "4xx", "5xx", "other"
+	RPS1m          float64        `json:"rps_1m"`          // requests per second, last minute
+	WindowSeconds  int            `json:"window_seconds"`
+	OldestTS       int64          `json:"oldest_ts,omitempty"`
+	NewestTS       int64          `json:"newest_ts,omitempty"`
 }
 
 // Stats computes aggregate metrics over the current buffer snapshot.

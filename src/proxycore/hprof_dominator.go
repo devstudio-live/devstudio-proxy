@@ -197,8 +197,8 @@ func BuildDomChildren(idom []int32, retainedSizes []int64) (children [][]int32, 
 
 // ObjectGraph holds the full per-object reference graph and dominator tree.
 type ObjectGraph struct {
-	NodeCount     int       // includes virtual root at index 0
-	ObjectIDs     []uint64  // [0]=0 (virtual root), [1..N]=real objects
+	NodeCount     int      // includes virtual root at index 0
+	ObjectIDs     []uint64 // [0]=0 (virtual root), [1..N]=real objects
 	ClassIDs      []uint64
 	ShallowSizes  []int64
 	RetainedSizes []int64
@@ -208,16 +208,16 @@ type ObjectGraph struct {
 	ElemTypes     []byte
 	IDSize        int
 
-	Idom        []int32
-	FwdCSR      *CSRGraph
-	RevCSR      *CSRGraph
-	IDToIndex   map[uint64]int32
+	Idom         []int32
+	FwdCSR       *CSRGraph
+	RevCSR       *CSRGraph
+	IDToIndex    map[uint64]int32
 	ClassToNodes map[uint64][]int32
-	ClassNames  map[uint64]string
-	ClassMetas  map[uint64]*ObjGraphClassMeta
-	DomChildren [][]int32
-	HasChildren []bool
-	GCRootTypes map[int32]string // node index → root type
+	ClassNames   map[uint64]string
+	ClassMetas   map[uint64]*ObjGraphClassMeta
+	DomChildren  [][]int32
+	HasChildren  []bool
+	GCRootTypes  map[int32]string // node index → root type
 }
 
 // ObjGraphClassMeta stores resolved class field metadata for field decoding.
@@ -332,7 +332,7 @@ type DecodedField struct {
 
 // FieldValue holds the decoded value of a field.
 type FieldValue struct {
-	Kind      string `json:"kind,omitempty"`      // "ref" for object references
+	Kind      string `json:"kind,omitempty"` // "ref" for object references
 	ObjectID  string `json:"objectId,omitempty"`
 	ClassName string `json:"className,omitempty"`
 	Raw       string `json:"raw,omitempty"`

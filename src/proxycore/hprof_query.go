@@ -53,7 +53,7 @@ const (
 
 type oqlCond struct {
 	// Leaf condition
-	MetaProp string    // e.g. "retainedSize"
+	MetaProp string // e.g. "retainedSize"
 	Op       oqlCondOp
 	ValueNum float64
 	ValueStr string
@@ -75,13 +75,13 @@ type OQLResult struct {
 // ── Parser ─────────────────────────────────────────────────────────────────
 
 var (
-	oqlSelectRe  = regexp.MustCompile(`(?i)^\s*SELECT\s+(.+?)\s+FROM\s+`)
-	oqlFromRe    = regexp.MustCompile(`(?i)\bFROM\s+([\w.*\[\]]+)(?:\s+(\w+))?\s*`)
-	oqlWhereRe   = regexp.MustCompile(`(?i)\bWHERE\s+(.+?)(?:\s+ORDER\s|\s+LIMIT\s|$)`)
-	oqlOrderRe   = regexp.MustCompile(`(?i)\bORDER\s+BY\s+\w+\.@?(\w+)(?:\s+(ASC|DESC))?\s*`)
-	oqlLimitRe   = regexp.MustCompile(`(?i)\bLIMIT\s+(\d+)`)
-	oqlOffsetRe  = regexp.MustCompile(`(?i)\bOFFSET\s+(\d+)`)
-	oqlCondRe    = regexp.MustCompile(`(?i)\w+\.@?(\w+)\s*(>=|<=|!=|>|<|=|LIKE)\s*(.+)`)
+	oqlSelectRe = regexp.MustCompile(`(?i)^\s*SELECT\s+(.+?)\s+FROM\s+`)
+	oqlFromRe   = regexp.MustCompile(`(?i)\bFROM\s+([\w.*\[\]]+)(?:\s+(\w+))?\s*`)
+	oqlWhereRe  = regexp.MustCompile(`(?i)\bWHERE\s+(.+?)(?:\s+ORDER\s|\s+LIMIT\s|$)`)
+	oqlOrderRe  = regexp.MustCompile(`(?i)\bORDER\s+BY\s+\w+\.@?(\w+)(?:\s+(ASC|DESC))?\s*`)
+	oqlLimitRe  = regexp.MustCompile(`(?i)\bLIMIT\s+(\d+)`)
+	oqlOffsetRe = regexp.MustCompile(`(?i)\bOFFSET\s+(\d+)`)
+	oqlCondRe   = regexp.MustCompile(`(?i)\w+\.@?(\w+)\s*(>=|<=|!=|>|<|=|LIKE)\s*(.+)`)
 )
 
 // ParseOQL parses an OQL query string into an OQLQuery.
@@ -508,26 +508,26 @@ func sortOQLRows(rows []oqlRow, prop string, desc bool) {
 // FlameNode represents a node in the flame graph tree.
 type FlameNode struct {
 	Name     string       `json:"name"`
-	Value    int64        `json:"value"`    // total allocated bytes through this frame
-	Self     int64        `json:"self"`     // allocated directly at this frame (leaf)
+	Value    int64        `json:"value"` // total allocated bytes through this frame
+	Self     int64        `json:"self"`  // allocated directly at this frame (leaf)
 	Children []*FlameNode `json:"children,omitempty"`
 }
 
 // HprofStackFrame stores a parsed STACK_FRAME record.
 type HprofStackFrame struct {
-	FrameID      uint64
-	MethodNameID uint64
-	MethodSigID  uint64
-	SourceFileID uint64
+	FrameID       uint64
+	MethodNameID  uint64
+	MethodSigID   uint64
+	SourceFileID  uint64
 	ClassSerialNo uint32
-	LineNumber   int32 // -1=unknown, -2=compiled, -3=native, 0+=actual line
+	LineNumber    int32 // -1=unknown, -2=compiled, -3=native, 0+=actual line
 }
 
 // HprofStackTrace stores a parsed STACK_TRACE record.
 type HprofStackTrace struct {
-	Serial   uint32
+	Serial       uint32
 	ThreadSerial uint32
-	FrameIDs []uint64
+	FrameIDs     []uint64
 }
 
 // AllocSite links an object's stackTraceSerial to aggregated allocation data.

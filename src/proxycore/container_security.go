@@ -444,8 +444,8 @@ func parseTrivyOutput(imageRef string, data []byte) *VulnScanResult {
 	var raw struct {
 		Results []struct {
 			Vulnerabilities []struct {
-				VulnerabilityID string `json:"VulnerabilityID"`
-				PkgName         string `json:"PkgName"`
+				VulnerabilityID  string `json:"VulnerabilityID"`
+				PkgName          string `json:"PkgName"`
 				InstalledVersion string `json:"InstalledVersion"`
 				FixedVersion     string `json:"FixedVersion"`
 				Severity         string `json:"Severity"`

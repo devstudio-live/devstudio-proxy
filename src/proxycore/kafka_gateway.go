@@ -468,12 +468,12 @@ func (s *Server) kafkaHandleTopicDetail(w http.ResponseWriter, req KafkaRequest)
 	}
 
 	type partitionInfo struct {
-		ID       int    `json:"id"`
-		Leader   int    `json:"leader"`
-		Replicas []int  `json:"replicas"`
-		ISR      []int  `json:"isr"`
-		OffsetLo int64  `json:"offsetLo"`
-		OffsetHi int64  `json:"offsetHi"`
+		ID       int   `json:"id"`
+		Leader   int   `json:"leader"`
+		Replicas []int `json:"replicas"`
+		ISR      []int `json:"isr"`
+		OffsetLo int64 `json:"offsetLo"`
+		OffsetHi int64 `json:"offsetHi"`
 	}
 
 	partitions := make([]partitionInfo, len(topic.Partitions))
@@ -2290,4 +2290,3 @@ func (s *Server) kafkaHandleSchemaConfig(w http.ResponseWriter, req KafkaRequest
 	dur := float64(time.Since(start).Milliseconds())
 	json.NewEncoder(w).Encode(KafkaResponse{DurationMs: dur, Data: data})
 }
-

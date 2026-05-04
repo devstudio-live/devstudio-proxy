@@ -8,13 +8,13 @@
 //  1. Parses the validated DAG payload into nodes + edges,
 //  2. Topo-sorts via Kahn's algorithm (stable in author-insertion order),
 //  3. Walks the topo order; for each node either
-//       a. delegates to one of the existing 10 gateway handlers
-//          (sql / mongo / elastic / redis / fs / k8s / ssh / kafka /
-//          container / hprof) via an internal call — the gateway
-//          handlers themselves remain UNCHANGED per hard-scope rule H;
-//          or
-//       b. treats the node as a passthrough (no `params.gateway`),
-//          emitting a `node_result` with no gateway side-effects,
+//     a. delegates to one of the existing 10 gateway handlers
+//     (sql / mongo / elastic / redis / fs / k8s / ssh / kafka /
+//     container / hprof) via an internal call — the gateway
+//     handlers themselves remain UNCHANGED per hard-scope rule H;
+//     or
+//     b. treats the node as a passthrough (no `params.gateway`),
+//     emitting a `node_result` with no gateway side-effects,
 //  4. Streams `node_start` / `node_result` / `node_failed` /
 //     `node_skipped` frames over the per-execution frame channel as
 //     it goes, plus a terminal `run_completed` or `run_failed` frame,
@@ -551,10 +551,10 @@ func runInstrumentedNode(exec *dagExecution, node dagNodeSpec) (map[string]inter
 	}
 
 	return map[string]interface{}{
-		"instrumented":     true,
-		"steps":            steps,
-		"delayMs":          delayMs,
-		"progressEmitted":  emitted,
+		"instrumented":    true,
+		"steps":           steps,
+		"delayMs":         delayMs,
+		"progressEmitted": emitted,
 	}, nil
 }
 
@@ -738,9 +738,9 @@ func dispatchGatewayInternal(s *Server, ctx context.Context, protocol, route str
 // to capture responses from the existing gateway handlers without
 // opening a TCP loopback. Not exported — only the executor uses it.
 type bufferResponseWriter struct {
-	header  http.Header
-	status  int
-	body    bytes.Buffer
+	header   http.Header
+	status   int
+	body     bytes.Buffer
 	wroteHdr bool
 }
 

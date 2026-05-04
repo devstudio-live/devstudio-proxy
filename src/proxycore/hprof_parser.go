@@ -12,13 +12,13 @@ import (
 // ── HPROF Binary Format Constants ───────────────────────────────────────────
 
 const (
-	tagString        = 0x01
-	tagLoadClass     = 0x02
-	tagStackFrame    = 0x04
-	tagStackTrace    = 0x05
-	tagHeapDump      = 0x0C
-	tagHeapDumpSeg   = 0x1C
-	tagHeapDumpEnd   = 0x2C
+	tagString      = 0x01
+	tagLoadClass   = 0x02
+	tagStackFrame  = 0x04
+	tagStackTrace  = 0x05
+	tagHeapDump    = 0x0C
+	tagHeapDumpSeg = 0x1C
+	tagHeapDumpEnd = 0x2C
 
 	// Heap dump sub-record tags
 	heapGCRootUnknown     = 0xFF
@@ -75,11 +75,11 @@ type HprofResult struct {
 	Collections *CollectionAnalysis `json:"-"`
 
 	// Phase 4: stack traces + allocation sites (for OQL and flame graph)
-	Strings                map[uint64]string            `json:"-"` // stringID → UTF-8 (from pass1)
-	StackFrames            map[uint64]HprofStackFrame   `json:"-"`
-	StackTraces            map[uint32]*HprofStackTrace  `json:"-"`
-	AllocSites             []AllocSite                  `json:"-"`
-	FrameClassSerialToObjID map[uint32]uint64            `json:"-"` // class serial → classObjectID
+	Strings                 map[uint64]string           `json:"-"` // stringID → UTF-8 (from pass1)
+	StackFrames             map[uint64]HprofStackFrame  `json:"-"`
+	StackTraces             map[uint32]*HprofStackTrace `json:"-"`
+	AllocSites              []AllocSite                 `json:"-"`
+	FrameClassSerialToObjID map[uint32]uint64           `json:"-"` // class serial → classObjectID
 
 	// Phase 6: class loader + thread analysis (nil until computed)
 	ClassLoaderMap map[uint64]uint64           `json:"-"` // classObjectID → classLoaderObjectID
@@ -134,9 +134,9 @@ type HprofClassSummary struct {
 
 // HprofGCRootGroup groups GC roots by type.
 type HprofGCRootGroup struct {
-	Type      string              `json:"type"`
-	Count     int                 `json:"count"`
-	ObjectIDs []HprofGCRootEntry  `json:"objectIds"`
+	Type      string             `json:"type"`
+	Count     int                `json:"count"`
+	ObjectIDs []HprofGCRootEntry `json:"objectIds"`
 }
 
 // HprofGCRootEntry is a single GC root reference.
@@ -156,13 +156,13 @@ type HprofDomNode struct {
 
 // HprofInsight is a triage insight card.
 type HprofInsight struct {
-	ID       string              `json:"id"`
-	Title    string              `json:"title"`
-	Severity string              `json:"severity"`
-	Summary  string              `json:"summary"`
-	Metrics  []HprofMetric       `json:"metrics"`
+	ID       string                   `json:"id"`
+	Title    string                   `json:"title"`
+	Severity string                   `json:"severity"`
+	Summary  string                   `json:"summary"`
+	Metrics  []HprofMetric            `json:"metrics"`
 	Rows     []map[string]interface{} `json:"rows"`
-	Actions  []HprofAction       `json:"actions"`
+	Actions  []HprofAction            `json:"actions"`
 }
 
 // HprofMetric is a key-value metric in an insight card.
@@ -188,20 +188,20 @@ type hprofParser struct {
 	idSize   int
 
 	// Pass 1 results
-	strings    map[uint64]string  // stringID → UTF-8 value
-	classes    map[uint64]string  // classObjectID → className
+	strings     map[uint64]string // stringID → UTF-8 value
+	classes     map[uint64]string // classObjectID → className
 	classSerial map[uint32]uint64 // serial → classObjectID
-	segOffsets []int64            // offsets of HEAP_DUMP / HEAP_DUMP_SEGMENT records
+	segOffsets  []int64           // offsets of HEAP_DUMP / HEAP_DUMP_SEGMENT records
 
 	// Pass 1 stack trace data (Phase 4)
-	stackFrames  map[uint64]HprofStackFrame  // frameID → frame
-	stackTraces  map[uint32]*HprofStackTrace // serial → trace
+	stackFrames map[uint64]HprofStackFrame  // frameID → frame
+	stackTraces map[uint32]*HprofStackTrace // serial → trace
 
 	// Pass 2 results
 	classDumps    map[uint64]*classDump // classObjectID → dump
 	classSummary  map[uint64]*classStats
-	gcRoots       map[string]int                   // rootType → count
-	gcRootEntries map[string][]HprofGCRootEntry    // rootType → entries (max 20)
+	gcRoots       map[string]int                // rootType → count
+	gcRootEntries map[string][]HprofGCRootEntry // rootType → entries (max 20)
 	topObjects    []topObject
 
 	totalObjects      int64
@@ -283,17 +283,17 @@ func ParseHprof(path string, cancel <-chan struct{}, progress ProgressCallback) 
 	}
 
 	p := &hprofParser{
-		data:          data,
-		fileSize:      fileSize,
-		strings:       make(map[uint64]string),
-		classes:       make(map[uint64]string),
-		classSerial:   make(map[uint32]uint64),
-		stackFrames:   make(map[uint64]HprofStackFrame),
-		stackTraces:   make(map[uint32]*HprofStackTrace),
-		classDumps:    make(map[uint64]*classDump),
-		classSummary:  make(map[uint64]*classStats),
-		gcRoots:       make(map[string]int),
-		gcRootEntries: make(map[string][]HprofGCRootEntry),
+		data:               data,
+		fileSize:           fileSize,
+		strings:            make(map[uint64]string),
+		classes:            make(map[uint64]string),
+		classSerial:        make(map[uint32]uint64),
+		stackFrames:        make(map[uint64]HprofStackFrame),
+		stackTraces:        make(map[uint32]*HprofStackTrace),
+		classDumps:         make(map[uint64]*classDump),
+		classSummary:       make(map[uint64]*classStats),
+		gcRoots:            make(map[string]int),
+		gcRootEntries:      make(map[string][]HprofGCRootEntry),
 		objectStackSerials: make(map[uint64]uint32),
 		classLoaderMap:     make(map[uint64]uint64),
 		threadObjects:      make(map[uint64]ThreadObjectMeta),
@@ -861,7 +861,7 @@ func (p *hprofParser) parseInstanceDump(pos int64, top *topNHeap) int64 {
 	objectID := p.readID(pos)
 	pos += idSz
 	stackSerial := binary.BigEndian.Uint32(p.data[pos : pos+4]) // Phase 4: capture stack trace serial
-	pos += 4 // stackTraceSerial
+	pos += 4                                                    // stackTraceSerial
 	classID := p.readID(pos)
 	pos += idSz
 	numBytes := int64(binary.BigEndian.Uint32(p.data[pos : pos+4]))
@@ -916,7 +916,7 @@ func (p *hprofParser) parseObjectArrayDump(pos int64, top *topNHeap) int64 {
 	objectID := p.readID(pos)
 	pos += idSz
 	oaStackSerial := binary.BigEndian.Uint32(p.data[pos : pos+4]) // Phase 4
-	pos += 4 // stackTraceSerial
+	pos += 4                                                      // stackTraceSerial
 	numElems := int64(binary.BigEndian.Uint32(p.data[pos : pos+4]))
 	pos += 4
 	classID := p.readID(pos)
@@ -965,7 +965,7 @@ func (p *hprofParser) parsePrimArrayDump(pos int64, top *topNHeap) int64 {
 	objectID := p.readID(pos)
 	pos += idSz
 	paStackSerial := binary.BigEndian.Uint32(p.data[pos : pos+4]) // Phase 4
-	pos += 4 // stackTraceSerial
+	pos += 4                                                      // stackTraceSerial
 	numElems := int64(binary.BigEndian.Uint32(p.data[pos : pos+4]))
 	pos += 4
 	elemType := p.data[pos]

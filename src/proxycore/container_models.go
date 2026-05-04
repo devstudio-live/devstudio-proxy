@@ -6,17 +6,17 @@ import "time"
 
 // ContainerRequest is the unified request body for all container gateway endpoints.
 type ContainerRequest struct {
-	Runtime        string            `json:"runtime,omitempty"`        // auto-detect if empty
-	SocketPath     string            `json:"socketPath,omitempty"`     // custom socket
-	Resource       string            `json:"resource"`                 // containers|images|volumes|networks|compose|pods|system
-	Action         string            `json:"action"`                   // list|inspect|stats|logs|start|stop|remove|pull|build|prune
-	ID             string            `json:"id,omitempty"`             // container/image/volume ID
+	Runtime        string            `json:"runtime,omitempty"`    // auto-detect if empty
+	SocketPath     string            `json:"socketPath,omitempty"` // custom socket
+	Resource       string            `json:"resource"`             // containers|images|volumes|networks|compose|pods|system
+	Action         string            `json:"action"`               // list|inspect|stats|logs|start|stop|remove|pull|build|prune
+	ID             string            `json:"id,omitempty"`         // container/image/volume ID
 	Name           string            `json:"name,omitempty"`
-	Namespace      string            `json:"namespace,omitempty"`      // containerd namespace
+	Namespace      string            `json:"namespace,omitempty"` // containerd namespace
 	Filters        map[string]string `json:"filters,omitempty"`
 	ConnectionMode string            `json:"connectionMode,omitempty"` // "local" | "ssh" | "remote-tcp"
 	SSHConnection  *SSHConnection    `json:"sshConnection,omitempty"`
-	RemoteHost     string            `json:"remoteHost,omitempty"`     // tcp://host:2376
+	RemoteHost     string            `json:"remoteHost,omitempty"` // tcp://host:2376
 
 	// Phase 2 — write operations
 	Timeout  int               `json:"timeout,omitempty"`  // stop/restart timeout in seconds
@@ -28,8 +28,8 @@ type ContainerRequest struct {
 	Dangling bool              `json:"dangling,omitempty"` // prune only dangling images
 
 	// Phase 2B — logs
-	TailLines int   `json:"tailLines,omitempty"` // number of tail lines for logs
-	Follow    bool  `json:"follow,omitempty"`    // follow/stream logs
+	TailLines int  `json:"tailLines,omitempty"` // number of tail lines for logs
+	Follow    bool `json:"follow,omitempty"`    // follow/stream logs
 
 	// Phase 2C — compose
 	Project string `json:"project,omitempty"` // compose project name for up/down/restart
@@ -40,80 +40,80 @@ type ContainerRequest struct {
 	// Phase 4B — TLS for remote TCP connections
 	TLSCACert string `json:"tlsCACert,omitempty"` // PEM-encoded CA certificate
 	TLSCert   string `json:"tlsCert,omitempty"`   // PEM-encoded client certificate
-	TLSKey    string `json:"tlsKey,omitempty"`     // PEM-encoded client private key
+	TLSKey    string `json:"tlsKey,omitempty"`    // PEM-encoded client private key
 }
 
 // ContainerResponse is the unified response body for all container gateway endpoints.
 type ContainerResponse struct {
-	Containers []ContainerInfo  `json:"containers,omitempty"`
-	Images     []ImageInfo      `json:"images,omitempty"`
-	Volumes    []VolumeInfo     `json:"volumes,omitempty"`
-	Networks   []NetworkInfo    `json:"networks,omitempty"`
-	Container  *ContainerDetail `json:"container,omitempty"`
-	Image      *ImageDetail     `json:"image,omitempty"`
-	Volume     *VolumeInfo      `json:"volume,omitempty"`
-	Network    *NetworkInfo     `json:"network,omitempty"`
-	Runtimes   []RuntimeInfo    `json:"runtimes,omitempty"`
-	System     *SystemInfo      `json:"system,omitempty"`
-	Prune           *PruneResult     `json:"prune,omitempty"`
-	Logs            string           `json:"logs,omitempty"`
-	ComposeProjects []ComposeProject `json:"composeProjects,omitempty"`
-	ComposeFile     string           `json:"composeFile,omitempty"`
-	Pods            []PodInfo          `json:"pods,omitempty"`
-	Pod             *PodDetail         `json:"pod,omitempty"`
-	VMs             []VMInfo           `json:"vms,omitempty"`
+	Containers      []ContainerInfo     `json:"containers,omitempty"`
+	Images          []ImageInfo         `json:"images,omitempty"`
+	Volumes         []VolumeInfo        `json:"volumes,omitempty"`
+	Networks        []NetworkInfo       `json:"networks,omitempty"`
+	Container       *ContainerDetail    `json:"container,omitempty"`
+	Image           *ImageDetail        `json:"image,omitempty"`
+	Volume          *VolumeInfo         `json:"volume,omitempty"`
+	Network         *NetworkInfo        `json:"network,omitempty"`
+	Runtimes        []RuntimeInfo       `json:"runtimes,omitempty"`
+	System          *SystemInfo         `json:"system,omitempty"`
+	Prune           *PruneResult        `json:"prune,omitempty"`
+	Logs            string              `json:"logs,omitempty"`
+	ComposeProjects []ComposeProject    `json:"composeProjects,omitempty"`
+	ComposeFile     string              `json:"composeFile,omitempty"`
+	Pods            []PodInfo           `json:"pods,omitempty"`
+	Pod             *PodDetail          `json:"pod,omitempty"`
+	VMs             []VMInfo            `json:"vms,omitempty"`
 	BuildHistory    []BuildHistoryEntry `json:"buildHistory,omitempty"`
-	SharedImageIDs  []string           `json:"sharedImageIds,omitempty"`
-	SecurityAudit   *SecurityAudit     `json:"securityAudit,omitempty"`
-	VulnScan        *VulnScanResult    `json:"vulnScan,omitempty"`
-	VulnScanners    []VulnScanResult   `json:"vulnScanners,omitempty"`
-	ExportRun       string             `json:"exportRun,omitempty"`
-	ExportCompose   string             `json:"exportCompose,omitempty"`
-	OK              bool               `json:"ok,omitempty"`
-	Error           string           `json:"error,omitempty"`
-	DurationMs      float64          `json:"durationMs"`
+	SharedImageIDs  []string            `json:"sharedImageIds,omitempty"`
+	SecurityAudit   *SecurityAudit      `json:"securityAudit,omitempty"`
+	VulnScan        *VulnScanResult     `json:"vulnScan,omitempty"`
+	VulnScanners    []VulnScanResult    `json:"vulnScanners,omitempty"`
+	ExportRun       string              `json:"exportRun,omitempty"`
+	ExportCompose   string              `json:"exportCompose,omitempty"`
+	OK              bool                `json:"ok,omitempty"`
+	Error           string              `json:"error,omitempty"`
+	DurationMs      float64             `json:"durationMs"`
 }
 
 // ── Unified data models ─────────────────────────────────────────────────────
 
 // ContainerInfo is the normalized container summary returned by all adapters.
 type ContainerInfo struct {
-	ID        string            `json:"id"`
-	Name      string            `json:"name"`
-	Image     string            `json:"image"`
-	ImageID   string            `json:"imageId,omitempty"`
-	Command   string            `json:"command,omitempty"`
-	Created   time.Time         `json:"created"`
-	State     string            `json:"state"`  // running|exited|paused|created|restarting|removing|dead
-	Status    string            `json:"status"` // human-readable, e.g. "Up 2 hours"
-	Ports     []PortBinding     `json:"ports,omitempty"`
-	Labels    map[string]string `json:"labels,omitempty"`
-	Mounts    []string          `json:"mounts,omitempty"`
-	Networks  []string          `json:"networks,omitempty"`
-	Runtime   string            `json:"runtime"` // which adapter produced this
-	Platform  string            `json:"platform,omitempty"`
-	SizeRw    int64             `json:"sizeRw,omitempty"`
-	SizeRoot  int64             `json:"sizeRoot,omitempty"`
+	ID       string            `json:"id"`
+	Name     string            `json:"name"`
+	Image    string            `json:"image"`
+	ImageID  string            `json:"imageId,omitempty"`
+	Command  string            `json:"command,omitempty"`
+	Created  time.Time         `json:"created"`
+	State    string            `json:"state"`  // running|exited|paused|created|restarting|removing|dead
+	Status   string            `json:"status"` // human-readable, e.g. "Up 2 hours"
+	Ports    []PortBinding     `json:"ports,omitempty"`
+	Labels   map[string]string `json:"labels,omitempty"`
+	Mounts   []string          `json:"mounts,omitempty"`
+	Networks []string          `json:"networks,omitempty"`
+	Runtime  string            `json:"runtime"` // which adapter produced this
+	Platform string            `json:"platform,omitempty"`
+	SizeRw   int64             `json:"sizeRw,omitempty"`
+	SizeRoot int64             `json:"sizeRoot,omitempty"`
 }
 
 // ContainerDetail is the full inspect output for a single container.
 type ContainerDetail struct {
 	ContainerInfo
-	Env          []string          `json:"env,omitempty"`
-	Entrypoint   []string          `json:"entrypoint,omitempty"`
-	Cmd          []string          `json:"cmd,omitempty"`
-	WorkingDir   string            `json:"workingDir,omitempty"`
-	User         string            `json:"user,omitempty"`
-	Hostname     string            `json:"hostname,omitempty"`
-	RestartCount int               `json:"restartCount"`
-	MountDetails []MountDetail     `json:"mountDetails,omitempty"`
+	Env           []string                   `json:"env,omitempty"`
+	Entrypoint    []string                   `json:"entrypoint,omitempty"`
+	Cmd           []string                   `json:"cmd,omitempty"`
+	WorkingDir    string                     `json:"workingDir,omitempty"`
+	User          string                     `json:"user,omitempty"`
+	Hostname      string                     `json:"hostname,omitempty"`
+	RestartCount  int                        `json:"restartCount"`
+	MountDetails  []MountDetail              `json:"mountDetails,omitempty"`
 	NetworkDetail map[string]NetworkEndpoint `json:"networkDetail,omitempty"`
-	HealthStatus string            `json:"healthStatus,omitempty"` // healthy|unhealthy|starting|none
-	StartedAt    *time.Time        `json:"startedAt,omitempty"`
-	FinishedAt   *time.Time        `json:"finishedAt,omitempty"`
-	ExitCode     int               `json:"exitCode"`
-	Privileged   bool              `json:"privileged"`
-	Raw          map[string]any    `json:"raw,omitempty"` // full inspect JSON
+	HealthStatus  string                     `json:"healthStatus,omitempty"` // healthy|unhealthy|starting|none
+	StartedAt     *time.Time                 `json:"startedAt,omitempty"`
+	FinishedAt    *time.Time                 `json:"finishedAt,omitempty"`
+	ExitCode      int                        `json:"exitCode"`
+	Privileged    bool                       `json:"privileged"`
+	Raw           map[string]any             `json:"raw,omitempty"` // full inspect JSON
 }
 
 // PortBinding maps a container port to a host port.
@@ -126,7 +126,7 @@ type PortBinding struct {
 
 // MountDetail describes a single mount/bind/volume.
 type MountDetail struct {
-	Type        string `json:"type"`        // bind|volume|tmpfs
+	Type        string `json:"type"` // bind|volume|tmpfs
 	Source      string `json:"source"`
 	Destination string `json:"destination"`
 	Mode        string `json:"mode,omitempty"` // rw|ro
@@ -135,40 +135,40 @@ type MountDetail struct {
 
 // NetworkEndpoint describes a container's connection to a network.
 type NetworkEndpoint struct {
-	NetworkID string `json:"networkId"`
-	IPAddress string `json:"ipAddress"`
-	Gateway   string `json:"gateway"`
+	NetworkID  string `json:"networkId"`
+	IPAddress  string `json:"ipAddress"`
+	Gateway    string `json:"gateway"`
 	MacAddress string `json:"macAddress,omitempty"`
 }
 
 // ImageInfo is the normalized image summary.
 type ImageInfo struct {
-	ID         string    `json:"id"`
-	Repository string    `json:"repository"`
-	Tag        string    `json:"tag"`
-	Digest     string    `json:"digest,omitempty"`
-	Created    time.Time `json:"created"`
-	Size       int64     `json:"size"`
+	ID         string            `json:"id"`
+	Repository string            `json:"repository"`
+	Tag        string            `json:"tag"`
+	Digest     string            `json:"digest,omitempty"`
+	Created    time.Time         `json:"created"`
+	Size       int64             `json:"size"`
 	Labels     map[string]string `json:"labels,omitempty"`
-	Dangling   bool      `json:"dangling"`
-	Runtime    string    `json:"runtime"`
+	Dangling   bool              `json:"dangling"`
+	Runtime    string            `json:"runtime"`
 }
 
 // ImageDetail is the full inspect output for a single image.
 type ImageDetail struct {
 	ImageInfo
-	Architecture string            `json:"architecture"`
-	OS           string            `json:"os"`
-	Author       string            `json:"author,omitempty"`
-	Env          []string          `json:"env,omitempty"`
-	Entrypoint   []string          `json:"entrypoint,omitempty"`
-	Cmd          []string          `json:"cmd,omitempty"`
-	ExposedPorts []string          `json:"exposedPorts,omitempty"`
-	Volumes      []string          `json:"volumes,omitempty"`
-	WorkingDir   string            `json:"workingDir,omitempty"`
-	Layers       []string          `json:"layers,omitempty"`
-	History      []ImageHistory    `json:"history,omitempty"`
-	Raw          map[string]any    `json:"raw,omitempty"`
+	Architecture string         `json:"architecture"`
+	OS           string         `json:"os"`
+	Author       string         `json:"author,omitempty"`
+	Env          []string       `json:"env,omitempty"`
+	Entrypoint   []string       `json:"entrypoint,omitempty"`
+	Cmd          []string       `json:"cmd,omitempty"`
+	ExposedPorts []string       `json:"exposedPorts,omitempty"`
+	Volumes      []string       `json:"volumes,omitempty"`
+	WorkingDir   string         `json:"workingDir,omitempty"`
+	Layers       []string       `json:"layers,omitempty"`
+	History      []ImageHistory `json:"history,omitempty"`
+	Raw          map[string]any `json:"raw,omitempty"`
 }
 
 // ImageHistory is a single layer in the image build history.
@@ -188,7 +188,7 @@ type VolumeInfo struct {
 	Created    time.Time         `json:"created"`
 	Labels     map[string]string `json:"labels,omitempty"`
 	Scope      string            `json:"scope,omitempty"` // local|global
-	Size       int64             `json:"size,omitempty"`   // -1 if unknown
+	Size       int64             `json:"size,omitempty"`  // -1 if unknown
 	Runtime    string            `json:"runtime"`
 }
 
@@ -223,23 +223,23 @@ type RuntimeInfo struct {
 
 // SystemInfo is the runtime-level system information.
 type SystemInfo struct {
-	Runtime        string `json:"runtime"`
-	Version        string `json:"version"`
-	APIVersion     string `json:"apiVersion,omitempty"`
-	OS             string `json:"os"`
-	Arch           string `json:"arch"`
-	KernelVersion  string `json:"kernelVersion,omitempty"`
-	Rootless       bool   `json:"rootless"`
-	Containers     int    `json:"containers"`
-	Running        int    `json:"running"`
-	Paused         int    `json:"paused"`
-	Stopped        int    `json:"stopped"`
-	Images         int    `json:"images"`
-	StorageDriver  string `json:"storageDriver,omitempty"`
-	CgroupDriver   string `json:"cgroupDriver,omitempty"`
-	CgroupVersion  string `json:"cgroupVersion,omitempty"`
-	MemoryTotal    int64  `json:"memoryTotal,omitempty"`
-	CPUs           int    `json:"cpus,omitempty"`
+	Runtime         string   `json:"runtime"`
+	Version         string   `json:"version"`
+	APIVersion      string   `json:"apiVersion,omitempty"`
+	OS              string   `json:"os"`
+	Arch            string   `json:"arch"`
+	KernelVersion   string   `json:"kernelVersion,omitempty"`
+	Rootless        bool     `json:"rootless"`
+	Containers      int      `json:"containers"`
+	Running         int      `json:"running"`
+	Paused          int      `json:"paused"`
+	Stopped         int      `json:"stopped"`
+	Images          int      `json:"images"`
+	StorageDriver   string   `json:"storageDriver,omitempty"`
+	CgroupDriver    string   `json:"cgroupDriver,omitempty"`
+	CgroupVersion   string   `json:"cgroupVersion,omitempty"`
+	MemoryTotal     int64    `json:"memoryTotal,omitempty"`
+	CPUs            int      `json:"cpus,omitempty"`
 	SecurityOptions []string `json:"securityOptions,omitempty"`
 }
 
@@ -254,15 +254,15 @@ type ContainerStats struct {
 	ID            string  `json:"id"`
 	Name          string  `json:"name"`
 	CPUPercent    float64 `json:"cpuPercent"`
-	MemoryUsage   int64   `json:"memoryUsage"`   // bytes
-	MemoryLimit   int64   `json:"memoryLimit"`   // bytes
+	MemoryUsage   int64   `json:"memoryUsage"` // bytes
+	MemoryLimit   int64   `json:"memoryLimit"` // bytes
 	MemoryPercent float64 `json:"memoryPercent"`
-	NetInput      int64   `json:"netInput"`      // bytes
-	NetOutput     int64   `json:"netOutput"`     // bytes
-	BlockInput    int64   `json:"blockInput"`    // bytes
-	BlockOutput   int64   `json:"blockOutput"`   // bytes
+	NetInput      int64   `json:"netInput"`    // bytes
+	NetOutput     int64   `json:"netOutput"`   // bytes
+	BlockInput    int64   `json:"blockInput"`  // bytes
+	BlockOutput   int64   `json:"blockOutput"` // bytes
 	PIDs          int     `json:"pids"`
-	Timestamp     int64   `json:"timestamp"`     // unix ms
+	Timestamp     int64   `json:"timestamp"` // unix ms
 }
 
 // ── Compose models (Phase 2C) ───────────────────────────────────────────────
@@ -270,29 +270,29 @@ type ContainerStats struct {
 // ComposeProject represents a Docker Compose / Podman Compose project
 // detected via container labels.
 type ComposeProject struct {
-	Name         string           `json:"name"`
-	Status       string           `json:"status"`       // running|partial|stopped
-	ConfigFile   string           `json:"configFile,omitempty"`
-	WorkingDir   string           `json:"workingDir,omitempty"`
-	Services     []ComposeService `json:"services"`
-	Running      int              `json:"running"`
-	Stopped      int              `json:"stopped"`
-	Total        int              `json:"total"`
-	Created      time.Time        `json:"created"`
+	Name       string           `json:"name"`
+	Status     string           `json:"status"` // running|partial|stopped
+	ConfigFile string           `json:"configFile,omitempty"`
+	WorkingDir string           `json:"workingDir,omitempty"`
+	Services   []ComposeService `json:"services"`
+	Running    int              `json:"running"`
+	Stopped    int              `json:"stopped"`
+	Total      int              `json:"total"`
+	Created    time.Time        `json:"created"`
 }
 
 // ComposeService represents a single service within a compose project.
 type ComposeService struct {
-	Name         string    `json:"name"`
-	ContainerID  string    `json:"containerId"`
-	Image        string    `json:"image"`
-	State        string    `json:"state"` // running|exited|paused|...
-	Status       string    `json:"status"`
-	Ports        []PortBinding `json:"ports,omitempty"`
-	ExitCode     int       `json:"exitCode,omitempty"`
-	ServiceNum   int       `json:"serviceNum,omitempty"` // com.docker.compose.container-number
-	DependsOn    []string  `json:"dependsOn,omitempty"`
-	Created      time.Time `json:"created"`
+	Name        string        `json:"name"`
+	ContainerID string        `json:"containerId"`
+	Image       string        `json:"image"`
+	State       string        `json:"state"` // running|exited|paused|...
+	Status      string        `json:"status"`
+	Ports       []PortBinding `json:"ports,omitempty"`
+	ExitCode    int           `json:"exitCode,omitempty"`
+	ServiceNum  int           `json:"serviceNum,omitempty"` // com.docker.compose.container-number
+	DependsOn   []string      `json:"dependsOn,omitempty"`
+	Created     time.Time     `json:"created"`
 }
 
 // ── Pod models (Phase 3A) ───────────────────────────────────────────────────
@@ -300,20 +300,20 @@ type ComposeService struct {
 // PodInfo is the normalized pod summary returned by runtimes that support
 // pods natively (Podman, CRI-O/crictl).
 type PodInfo struct {
-	ID         string              `json:"id"`
-	Name       string              `json:"name"`
-	Status     string              `json:"status"` // Running|Paused|Stopped|Created|Dead|Degraded
-	Created    time.Time           `json:"created"`
-	Labels     map[string]string   `json:"labels,omitempty"`
-	Containers []PodContainerInfo  `json:"containers"`
-	Running    int                 `json:"running"`
-	Paused     int                 `json:"paused"`
-	Stopped    int                 `json:"stopped"`
-	Total      int                 `json:"total"`
-	Runtime    string              `json:"runtime"`
-	InfraID    string              `json:"infraId,omitempty"`
-	Networks   []string            `json:"networks,omitempty"`
-	Namespace  string              `json:"namespace,omitempty"` // CRI namespace
+	ID         string             `json:"id"`
+	Name       string             `json:"name"`
+	Status     string             `json:"status"` // Running|Paused|Stopped|Created|Dead|Degraded
+	Created    time.Time          `json:"created"`
+	Labels     map[string]string  `json:"labels,omitempty"`
+	Containers []PodContainerInfo `json:"containers"`
+	Running    int                `json:"running"`
+	Paused     int                `json:"paused"`
+	Stopped    int                `json:"stopped"`
+	Total      int                `json:"total"`
+	Runtime    string             `json:"runtime"`
+	InfraID    string             `json:"infraId,omitempty"`
+	Networks   []string           `json:"networks,omitempty"`
+	Namespace  string             `json:"namespace,omitempty"` // CRI namespace
 }
 
 // PodContainerInfo is a brief summary of a container within a pod.
@@ -336,19 +336,19 @@ type PodDetail struct {
 
 // VMInfo describes a VM-backed container runtime (Lima, Colima, Finch, Rancher Desktop).
 type VMInfo struct {
-	Name        string `json:"name"`                  // instance name (e.g. "default", "colima")
-	Type        string `json:"type"`                  // lima|colima|finch|rancher-desktop
-	DisplayName string `json:"displayName"`           // e.g. "Colima (default)"
-	Status      string `json:"status"`                // Running|Stopped|Unknown
-	CPUs        int    `json:"cpus,omitempty"`         // allocated CPUs
-	Memory      int64  `json:"memory,omitempty"`       // allocated memory in bytes
-	Disk        int64  `json:"disk,omitempty"`          // allocated disk in bytes
-	Arch        string `json:"arch,omitempty"`          // x86_64|aarch64
-	Runtime     string `json:"runtime,omitempty"`      // container runtime inside the VM (docker, containerd, etc.)
-	MountType   string `json:"mountType,omitempty"`    // mount type (reverse-sshfs, virtiofs, 9p, etc.)
-	VMType      string `json:"vmType,omitempty"`       // virtualisation type (qemu, vz, wsl2, etc.)
-	Dir         string `json:"dir,omitempty"`          // VM instance directory
-	PID         int    `json:"pid,omitempty"`          // VM process ID (when running)
+	Name        string `json:"name"`                // instance name (e.g. "default", "colima")
+	Type        string `json:"type"`                // lima|colima|finch|rancher-desktop
+	DisplayName string `json:"displayName"`         // e.g. "Colima (default)"
+	Status      string `json:"status"`              // Running|Stopped|Unknown
+	CPUs        int    `json:"cpus,omitempty"`      // allocated CPUs
+	Memory      int64  `json:"memory,omitempty"`    // allocated memory in bytes
+	Disk        int64  `json:"disk,omitempty"`      // allocated disk in bytes
+	Arch        string `json:"arch,omitempty"`      // x86_64|aarch64
+	Runtime     string `json:"runtime,omitempty"`   // container runtime inside the VM (docker, containerd, etc.)
+	MountType   string `json:"mountType,omitempty"` // mount type (reverse-sshfs, virtiofs, 9p, etc.)
+	VMType      string `json:"vmType,omitempty"`    // virtualisation type (qemu, vz, wsl2, etc.)
+	Dir         string `json:"dir,omitempty"`       // VM instance directory
+	PID         int    `json:"pid,omitempty"`       // VM process ID (when running)
 }
 
 // BuildHistoryEntry represents a single layer entry from buildah history.
@@ -365,41 +365,41 @@ type BuildHistoryEntry struct {
 // SecurityProfile describes the security posture of a single container,
 // extracted from the container inspect data.
 type SecurityProfile struct {
-	ContainerID   string   `json:"containerId"`
-	ContainerName string   `json:"containerName"`
-	Image         string   `json:"image"`
-	State         string   `json:"state"`
-	Privileged    bool     `json:"privileged"`
-	RunAsRoot     bool     `json:"runAsRoot"`           // true when User is empty or "0" or "root"
-	ReadOnlyFS    bool     `json:"readOnlyFs"`           // read-only root filesystem
-	CapAdd        []string `json:"capAdd,omitempty"`     // added capabilities
-	CapDrop       []string `json:"capDrop,omitempty"`    // dropped capabilities
-	SeccompProfile string  `json:"seccompProfile,omitempty"` // e.g. "default", "unconfined"
-	AppArmorProfile string `json:"appArmorProfile,omitempty"`
-	SELinuxLabel   string  `json:"seLinuxLabel,omitempty"`
-	PidMode       string   `json:"pidMode,omitempty"`   // e.g. "host"
-	NetworkMode   string   `json:"networkMode,omitempty"` // e.g. "host", "bridge"
-	IpcMode       string   `json:"ipcMode,omitempty"`   // e.g. "host"
-	UsernsMode    string   `json:"usernsMode,omitempty"` // e.g. "host"
-	ExposedPorts  []PortBinding `json:"exposedPorts,omitempty"` // host-bound ports
-	Runtime       string   `json:"runtime"`
+	ContainerID     string        `json:"containerId"`
+	ContainerName   string        `json:"containerName"`
+	Image           string        `json:"image"`
+	State           string        `json:"state"`
+	Privileged      bool          `json:"privileged"`
+	RunAsRoot       bool          `json:"runAsRoot"`                // true when User is empty or "0" or "root"
+	ReadOnlyFS      bool          `json:"readOnlyFs"`               // read-only root filesystem
+	CapAdd          []string      `json:"capAdd,omitempty"`         // added capabilities
+	CapDrop         []string      `json:"capDrop,omitempty"`        // dropped capabilities
+	SeccompProfile  string        `json:"seccompProfile,omitempty"` // e.g. "default", "unconfined"
+	AppArmorProfile string        `json:"appArmorProfile,omitempty"`
+	SELinuxLabel    string        `json:"seLinuxLabel,omitempty"`
+	PidMode         string        `json:"pidMode,omitempty"`      // e.g. "host"
+	NetworkMode     string        `json:"networkMode,omitempty"`  // e.g. "host", "bridge"
+	IpcMode         string        `json:"ipcMode,omitempty"`      // e.g. "host"
+	UsernsMode      string        `json:"usernsMode,omitempty"`   // e.g. "host"
+	ExposedPorts    []PortBinding `json:"exposedPorts,omitempty"` // host-bound ports
+	Runtime         string        `json:"runtime"`
 }
 
 // SecurityAudit aggregates security data across all containers for a runtime.
 type SecurityAudit struct {
-	Profiles       []SecurityProfile `json:"profiles"`
-	RuntimeMode    string            `json:"runtimeMode"`    // "rootless" or "rootful"
-	SecurityOptions []string         `json:"securityOptions,omitempty"` // from system info
+	Profiles        []SecurityProfile `json:"profiles"`
+	RuntimeMode     string            `json:"runtimeMode"`               // "rootless" or "rootful"
+	SecurityOptions []string          `json:"securityOptions,omitempty"` // from system info
 }
 
 // VulnScanResult holds vulnerability scan results from docker scout or grype.
 type VulnScanResult struct {
-	Scanner    string       `json:"scanner"`              // "docker-scout" | "grype" | "trivy"
-	Available  bool         `json:"available"`             // whether the scanner was found
-	ImageRef   string       `json:"imageRef,omitempty"`
-	Summary    *VulnSummary `json:"summary,omitempty"`
-	Vulns      []VulnEntry  `json:"vulns,omitempty"`
-	Error      string       `json:"error,omitempty"`
+	Scanner   string       `json:"scanner"`   // "docker-scout" | "grype" | "trivy"
+	Available bool         `json:"available"` // whether the scanner was found
+	ImageRef  string       `json:"imageRef,omitempty"`
+	Summary   *VulnSummary `json:"summary,omitempty"`
+	Vulns     []VulnEntry  `json:"vulns,omitempty"`
+	Error     string       `json:"error,omitempty"`
 }
 
 // VulnSummary summarises vulnerability counts by severity.
@@ -413,8 +413,8 @@ type VulnSummary struct {
 
 // VulnEntry is a single vulnerability record.
 type VulnEntry struct {
-	ID          string `json:"id"`          // CVE ID
-	Severity    string `json:"severity"`    // critical|high|medium|low
+	ID          string `json:"id"`       // CVE ID
+	Severity    string `json:"severity"` // critical|high|medium|low
 	Package     string `json:"package"`
 	Version     string `json:"version,omitempty"`
 	FixedIn     string `json:"fixedIn,omitempty"`

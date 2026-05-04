@@ -22,10 +22,10 @@ type SSHRequest struct {
 
 // SSHResponse is the unified response body for all SSH gateway endpoints.
 type SSHResponse struct {
-	Success    bool             `json:"success,omitempty"`
-	Message    string           `json:"message,omitempty"`
-	Error      string           `json:"error,omitempty"`
-	DurationMs float64          `json:"durationMs"`
+	Success    bool              `json:"success,omitempty"`
+	Message    string            `json:"message,omitempty"`
+	Error      string            `json:"error,omitempty"`
+	DurationMs float64           `json:"durationMs"`
 	Sessions   *[]map[string]any `json:"sessions,omitempty"` // pointer so omitempty skips nil but not empty slice
 	Item       map[string]any    `json:"item,omitempty"`
 	Items      *[]map[string]any `json:"items,omitempty"` // pointer so omitempty skips nil but not empty slice

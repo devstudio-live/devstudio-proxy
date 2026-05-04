@@ -19,7 +19,7 @@ const sshTunnelReaperInterval = 60 * time.Second
 type sshTunnel struct {
 	ID         string    `json:"id"`
 	ConnKey    string    `json:"-"`
-	Type       string    `json:"type"`               // local | remote | dynamic
+	Type       string    `json:"type"` // local | remote | dynamic
 	BindAddr   string    `json:"bindAddr"`
 	RemoteAddr string    `json:"remoteAddr,omitempty"`
 	StartedAt  time.Time `json:"startedAt"`
@@ -302,10 +302,10 @@ func biCopy(a, b net.Conn) {
 	done := make(chan struct{}, 2)
 	go func() { io.Copy(a, b); done <- struct{}{} }() //nolint:errcheck
 	go func() { io.Copy(b, a); done <- struct{}{} }() //nolint:errcheck
-	<-done        // wait for first direction to finish
-	a.Close()     //nolint:errcheck  — unblocks the other goroutine
-	b.Close()     //nolint:errcheck
-	<-done        // wait for second direction to finish
+	<-done                                            // wait for first direction to finish
+	a.Close()                                         //nolint:errcheck  — unblocks the other goroutine
+	b.Close()                                         //nolint:errcheck
+	<-done                                            // wait for second direction to finish
 }
 
 // ── Reaper ────────────────────────────────────────────────────────────────────

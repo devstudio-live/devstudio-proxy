@@ -53,12 +53,12 @@ const dagResultContextKind = "dag-result"
 //
 // Return contract:
 //   - (uuid, N, nil) — stored; caller emits the {resultContextId, resultBytes}
-//                     stub in place of embedding `result` in the frame.
+//     stub in place of embedding `result` in the frame.
 //   - ("",   0, nil) — below threshold OR nil input; caller embeds `result`.
 //   - ("",   0, err) — a >threshold payload could not be stored (over the
-//                     10 MiB per-entry cap, total-cache-full, etc.); caller
-//                     surfaces as node_failed so large opaque payloads
-//                     never leak into the frame channel silently.
+//     10 MiB per-entry cap, total-cache-full, etc.); caller
+//     surfaces as node_failed so large opaque payloads
+//     never leak into the frame channel silently.
 //
 // A result that fails json.Marshal (e.g. contains a channel) is treated
 // as below threshold so the executor's existing fallthrough behaviour
