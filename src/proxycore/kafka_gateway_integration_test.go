@@ -73,9 +73,13 @@ func TestIntegration_Kafka_Brokers(t *testing.T) {
 		t.Fatalf("brokers endpoint failed: %s", resp.Error)
 	}
 
-	rows, ok := resp.Data.([]any)
+	envelope, ok := resp.Data.(map[string]any)
+	if !ok {
+		t.Fatalf("expected envelope object, got %T: %v", resp.Data, resp.Data)
+	}
+	rows, ok := envelope["brokers"].([]any)
 	if !ok || len(rows) == 0 {
-		t.Fatalf("expected non-empty broker list, got %T: %v", resp.Data, resp.Data)
+		t.Fatalf("expected non-empty broker list under 'brokers', got %T: %v", envelope["brokers"], envelope["brokers"])
 	}
 
 	for i, row := range rows {
@@ -101,7 +105,9 @@ func TestIntegration_Kafka_BrokerConfig(t *testing.T) {
 	srv := NewServer(Options{Port: 0})
 	conn := kafkaTestConn()
 
-	rr := kafkaPost(t, srv, "broker/config", map[string]any{"connection": conn, "topic": "0"})
+	// "topic" is overloaded as the broker resource id (see kafkaHandleBrokerConfig).
+	// The lima testbed Kafka container sets KAFKA_NODE_ID=1, so the broker id is "1".
+	rr := kafkaPost(t, srv, "broker/config", map[string]any{"connection": conn, "topic": "1"})
 	resp := decodeKafkaResp(t, rr)
 
 	if resp.Error != "" {
@@ -157,9 +163,13 @@ func TestIntegration_Kafka_Topics(t *testing.T) {
 		t.Fatalf("topics endpoint failed: %s", resp.Error)
 	}
 
-	topics, ok := resp.Data.([]any)
+	envelope, ok := resp.Data.(map[string]any)
 	if !ok {
-		t.Fatalf("expected array data, got %T", resp.Data)
+		t.Fatalf("expected envelope object, got %T", resp.Data)
+	}
+	topics, ok := envelope["topics"].([]any)
+	if !ok {
+		t.Fatalf("expected array under 'topics', got %T", envelope["topics"])
 	}
 
 	// Verify structure of topic entries.
@@ -206,9 +216,13 @@ func TestIntegration_Kafka_Topics_Search(t *testing.T) {
 		t.Fatalf("topics search failed: %s", resp.Error)
 	}
 
-	topics, ok := resp.Data.([]any)
+	envelope, ok := resp.Data.(map[string]any)
 	if !ok {
-		t.Fatalf("expected array, got %T", resp.Data)
+		t.Fatalf("expected envelope object, got %T", resp.Data)
+	}
+	topics, ok := envelope["topics"].([]any)
+	if !ok {
+		t.Fatalf("expected array under 'topics', got %T", envelope["topics"])
 	}
 
 	for _, entry := range topics {
