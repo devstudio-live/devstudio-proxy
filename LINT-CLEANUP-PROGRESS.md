@@ -21,4 +21,4 @@ result, and any deviations.
 | P1    | gofmt + goimports                        | done    | 97e2266; 33 files; gofmt -l: 33 → 0, goimports -l: 33 → 0; ✓ go build ✓ go test -race ✓ make full ✓ gofmt -l ✓ goimports -l. DEVIATIONS: pre-existing wails/go.mod sync drift (unrelated to P1) — not addressed; manual macOS Wails smoke required before merge since wails/app.go was touched. |
 | P2    | govet + ineffassign + errcheck           | done    | no violations detected at ffc9a7f64fc96cc3cc7503e7fcc54e3b2626c381 |
 | P3    | staticcheck + unused                     | done    | no violations detected at 74fa21af2babbb7b38eef7faf6a77ae98a0d1546 |
-| P4    | govulncheck                              | pending |       |
+| P4    | govulncheck                              | done    | no violations detected at 7af24c416581348e5bb3e07ed538b27d5a529b11 |
